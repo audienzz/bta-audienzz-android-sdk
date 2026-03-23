@@ -1,0 +1,36 @@
+# ── Gradle ──────────────────────────────────────────────────────────────────
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+!gradle/wrapper/gradle-wrapper.properties
+
+# ── Android generated ────────────────────────────────────────────────────────
+*.iml
+*.ap_
+*.apk
+*.aab
+captures/
+
+# ── Local machine config (never commit) ─────────────────────────────────────
+local.properties
+*.keystore
+*.jks
+
+# ── NDK / CMake ──────────────────────────────────────────────────────────────
+.externalNativeBuild/
+.cxx/
+
+# ── IntelliJ / Android Studio ────────────────────────────────────────────────
+.idea/caches/
+.idea/libraries/
+.idea/modules.xml
+.idea/workspace.xml
+.idea/navEditor.xml
+.idea/assetWizardSettings.xml
+
+# ── OS ───────────────────────────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+ehthumbs.db

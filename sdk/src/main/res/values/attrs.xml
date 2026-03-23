@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Styleable attributes for BtaFeedView XML configuration -->
+    <declare-styleable name="BtaFeedView">
+        <!-- The BTA feed ID provided by Audienzz -->
+        <attr name="btaFeedId" format="string" />
+    </declare-styleable>
+</resources>
