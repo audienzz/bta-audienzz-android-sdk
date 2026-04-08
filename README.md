@@ -248,5 +248,3 @@ if (BuildConfig.DEBUG) {
 ```
 
 Pass `debug = true` and `mockRecommendations = true` to `load()` / `BtaFeed` to show mock content without a live feed configuration.
-
-> **Note:** The BTA feed JS widget requires Android WebView based on Chromium 80 or later (Android 10+ ships this by default). Testing on Android 8/9 with an outdated system WebView may result in a blank feed.
