@@ -11,25 +11,25 @@ import org.audienzz.bta.sdk.analytics.BtaEventTracker
  * class MyApp : Application() {
  *     override fun onCreate() {
  *         super.onCreate()
- *         BtaSdk.init(context = this, publisherId = "your-publisher-id")
+ *         BtaSdk.init(context = this, companyId = "your-companyId-id")
  *     }
  * }
  * ```
  */
 object BtaSdk {
 
-    /** Publisher identifier assigned by Audienzz. Set via [init]. */
-    internal var publisherId: String? = null
+    /** Company identifier assigned by Audienzz. Set via [init]. */
+    internal var companyId: String? = null
         private set
 
     /**
      * Initialise the BTA SDK.
      *
      * @param context     Application context — used to initialise the visitor ID store.
-     * @param publisherId Publisher identifier provided by Audienzz.
+     * @param companyId Company identifier provided by Audienzz.
      */
-    fun init(context: Context, publisherId: String) {
-        this.publisherId = publisherId
+    fun init(context: Context, companyId: String) {
+        this.companyId = companyId
         BtaEventTracker.init(context.applicationContext)
     }
 }
