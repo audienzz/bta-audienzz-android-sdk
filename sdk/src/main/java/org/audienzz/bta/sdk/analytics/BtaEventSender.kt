@@ -42,7 +42,7 @@ internal class BtaEventSender {
 
     private fun buildEventJson(event: BtaEvent): JSONObject {
         val data = JSONObject().apply {
-            put("publisherId", event.publisherId ?: JSONObject.NULL)
+            put("companyId", event.companyId ?: JSONObject.NULL)
             put("btaFeedId", event.btaFeedId)
             put("visitorId", event.visitorId)
             put("sessionId", event.sessionId)

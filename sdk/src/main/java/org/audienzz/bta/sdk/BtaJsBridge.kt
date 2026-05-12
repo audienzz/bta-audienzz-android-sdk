@@ -125,7 +125,7 @@ internal class BtaJsBridge(
         BtaEventTracker.track(
             BtaEvent(
                 type = type,
-                publisherId = BtaSdk.publisherId,
+                companyId = BtaSdk.companyId,
                 btaFeedId = btaFeedId,
                 visitorId = "",  // BtaEventTracker.track() overwrites this with the persisted ID
                 sessionId = BtaEventTracker.sessionId,

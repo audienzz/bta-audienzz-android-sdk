@@ -26,7 +26,7 @@ import org.audienzz.bta.sdk.model.ArticleClickPayload
  *
  * ```kotlin
  * // Application.onCreate() — initialise SDK once, same as View-based usage
- * BtaSdk.init(context = this, publisherId = "your-publisher-id")
+ * BtaSdk.init(context = this, companyId = "your-company-id")
  *
  * // Inside any Composable
  * BtaFeed(

@@ -23,7 +23,7 @@ class MainActivity : AppCompatActivity() {
 
         // Initialise the BTA SDK once per app session.
         // In a real app, move this to Application.onCreate().
-        BtaSdk.init(context = this, publisherId = PUBLISHER_ID)
+        BtaSdk.init(context = this, companyId = PUBLISHER_ID)
 
         btaFeedView = findViewById(R.id.btaFeedView)
 

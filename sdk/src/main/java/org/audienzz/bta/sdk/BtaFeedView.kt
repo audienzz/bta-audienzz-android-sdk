@@ -33,7 +33,7 @@ import org.audienzz.bta.sdk.analytics.BtaEventType
  *
  * ```kotlin
  * // Application.onCreate() — initialise SDK once
- * BtaSdk.init(publisherId = "your-publisher-id")
+ * BtaSdk.init(companyId = "your-publisher-id")
  *
  * // Set listener once (e.g. in Activity.onCreate)
  * btaFeedView.setListener(object : BtaFeedListener {
@@ -197,7 +197,7 @@ class BtaFeedView @JvmOverloads constructor(
         BtaEventTracker.track(
             BtaEvent(
                 type = type,
-                publisherId = BtaSdk.publisherId,
+                companyId = BtaSdk.companyId,
                 btaFeedId = btaFeedId,
                 visitorId = "",  // BtaEventTracker.track() replaces this with the persisted ID
                 sessionId = BtaEventTracker.sessionId,

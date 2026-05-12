@@ -43,7 +43,7 @@ Call `BtaSdk.init()` once, before any `BtaFeedView` is created — typically in 
 class MyApp : Application() {
     override fun onCreate() {
         super.onCreate()
-        BtaSdk.init(context = this, publisherId = "your-publisher-id")
+        BtaSdk.init(context = this, companyId = "your-publisher-id")
     }
 }
 ```

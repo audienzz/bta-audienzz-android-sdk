@@ -2,7 +2,7 @@ package org.audienzz.bta.sdk.analytics
 
 internal data class BtaEvent(
     val type: BtaEventType,
-    val publisherId: String?,
+    val companyId: String?,
     val btaFeedId: String,
     val visitorId: String,
     val sessionId: String,
