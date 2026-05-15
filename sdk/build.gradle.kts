@@ -11,7 +11,7 @@ plugins {
 android {
     namespace = "org.audienzz.bta.sdk"
     compileSdk = 36
-    version = "0.1.0"
+    version = "0.1.1"
 
     defaultConfig {
         minSdk = 24
