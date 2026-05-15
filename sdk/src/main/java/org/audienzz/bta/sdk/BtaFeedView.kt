@@ -101,6 +101,8 @@ class BtaFeedView @JvmOverloads constructor(
      * Automatically fires a `btafeed.pageview` analytics event.
      *
      * @param btaFeedId             The feed identifier provided by Audienzz.
+     * @param pageUrl               The canonical URL of the article/page hosting the feed.
+     *                              Used by the feed widget for contextual recommendations.
      * @param debug                 Enable feed debug logging (**do not use in production**).
      * @param mockRecommendations   Show mock recommendations instead of real ones
      *                              (**do not use in production**).
@@ -108,6 +110,7 @@ class BtaFeedView @JvmOverloads constructor(
     @JvmOverloads
     fun load(
         btaFeedId: String,
+        pageUrl: String,
         debug: Boolean = false,
         mockRecommendations: Boolean = false,
     ) {
@@ -152,7 +155,7 @@ class BtaFeedView @JvmOverloads constructor(
         )
         webView.addJavascriptInterface(bridge, JS_BRIDGE_NAME)
 
-        val html = buildHtml(btaFeedId, debug, mockRecommendations)
+        val html = buildHtml(btaFeedId, pageUrl, debug, mockRecommendations)
         webView.loadDataWithBaseURL(CDN_BASE_URL, html, "text/html", "UTF-8", null)
     }
 
@@ -265,6 +268,7 @@ class BtaFeedView @JvmOverloads constructor(
 
     private fun buildHtml(
         feedId: String,
+        pageUrl: String,
         debug: Boolean,
         mockRecommendations: Boolean,
     ): String {
@@ -294,6 +298,7 @@ class BtaFeedView @JvmOverloads constructor(
                     window.adnzBtaFeed.queue.push(function() {
                         window.adnzBtaFeed.start({
                             btaFeedId: '$feedId',
+                            url: '$pageUrl',
                             webview: true,
                             $debugLine
                             $mockLine
@@ -381,7 +386,6 @@ class BtaFeedView @JvmOverloads constructor(
         private const val TAG = "BtaFeedView"
         private const val JS_BRIDGE_NAME = "AndroidBridge"
 
-        /** CDN base URL. Switch to https://cdn.adnz.co/ once changes reach production. */
-        internal const val CDN_BASE_URL = "https://dev-cdn.adnz.co/"
+        internal const val CDN_BASE_URL = "https://cdn.adnz.co/"
     }
 }

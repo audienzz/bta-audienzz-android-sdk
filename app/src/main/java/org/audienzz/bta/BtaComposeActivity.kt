@@ -38,7 +38,10 @@ class BtaComposeActivity : ComponentActivity() {
         private const val TAG = "BtaComposeExample"
 
         /** Same feed ID as the View-based example. Replace with your real ID. */
-        internal const val BTA_FEED_ID = "92692c82-cb38-4164-b77c-e89d56cb486d"
+        internal const val BTA_FEED_ID = "5b0a5694-de8d-4ddb-8bd4-a871bb55f09b"
+
+        /** Replace with the canonical URL of the article page hosting this feed. */
+        internal const val PAGE_URL = "https://www.example.com/article/sample-article"
     }
 }
 
@@ -60,13 +63,10 @@ private fun BtaComposeScreen() {
             style = MaterialTheme.typography.bodyLarge,
         )
 
-        // Drop BtaFeed anywhere in a Composable — lifecycle is handled automatically.
-        // Remove debug = true and mockRecommendations = true in production!
         BtaFeed(
             btaFeedId = BtaComposeActivity.BTA_FEED_ID,
+            pageUrl = BtaComposeActivity.PAGE_URL,
             modifier = Modifier.fillMaxWidth(),
-            debug = true,
-            mockRecommendations = true,
             onArticleClick = { payload ->
                 Log.d("BtaComposeExample", "Article clicked: index=${payload.index} url=${payload.url}")
                 false // Let SDK open in fullscreen WebView

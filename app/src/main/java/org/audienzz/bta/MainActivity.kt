@@ -56,12 +56,11 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         btaFeedView.onResume()
 
-        // Load (or reload) the feed every time the screen is entered.
-        // Remove debug = true and mockRecommendations = true in production!
         btaFeedView.load(
             btaFeedId = BTA_FEED_ID,
+            pageUrl = PAGE_URL,
             debug = true,
-            mockRecommendations = true,
+            mockRecommendations = true
         )
     }
 
@@ -80,6 +79,9 @@ class MainActivity : AppCompatActivity() {
 
         /** Replace with your real BTA feed ID. */
         private const val BTA_FEED_ID = "92692c82-cb38-4164-b77c-e89d56cb486d"
+
+        /** Replace with the canonical URL of the article page hosting this feed. */
+        private const val PAGE_URL = "https://www.example.com/article/sample-article"
 
         /** Replace with your real publisher ID provided by Audienzz. */
         private const val PUBLISHER_ID = "example-publisher-id"

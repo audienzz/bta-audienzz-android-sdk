@@ -38,6 +38,8 @@ import org.audienzz.bta.sdk.model.ArticleClickPayload
  * ```
  *
  * @param btaFeedId           The feed identifier provided by Audienzz.
+ * @param pageUrl             The canonical URL of the article/page hosting the feed.
+ *                            Used by the feed widget for contextual recommendations.
  * @param modifier            Applied to the underlying [AndroidView].
  * @param debug               Enable feed debug logging (**do not use in production**).
  * @param mockRecommendations Show mock recommendations instead of real ones
@@ -54,6 +56,7 @@ import org.audienzz.bta.sdk.model.ArticleClickPayload
 @Composable
 fun BtaFeed(
     btaFeedId: String,
+    pageUrl: String,
     modifier: Modifier = Modifier,
     debug: Boolean = false,
     mockRecommendations: Boolean = false,
@@ -68,6 +71,7 @@ fun BtaFeed(
     // LifecycleEventObserver closure always reads the *latest* lambda without
     // needing to be re-registered every recomposition.
     val currentBtaFeedId by rememberUpdatedState(btaFeedId)
+    val currentPageUrl by rememberUpdatedState(pageUrl)
     val currentDebug by rememberUpdatedState(debug)
     val currentMockRecs by rememberUpdatedState(mockRecommendations)
     val currentOnArticleClick by rememberUpdatedState(onArticleClick)
@@ -110,7 +114,7 @@ fun BtaFeed(
                         }
                     })
                     view.onResume()
-                    view.load(currentBtaFeedId, currentDebug, currentMockRecs)
+                    view.load(currentBtaFeedId, currentPageUrl, currentDebug, currentMockRecs)
                 }
                 Lifecycle.Event.ON_PAUSE -> view.onPause()
                 else -> Unit
