@@ -83,6 +83,14 @@ internal class BtaJsBridge(
         trackEvent(BtaEventType.ARTICLE_IMPRESSION, index = index.takeIf { it >= 0 })
     }
 
+    // ── Feed error (called by JS on script load failure or start() error) ────
+
+    @JavascriptInterface
+    fun onFeedError(message: String) {
+        val cb = onFeedError  // capture property; avoids recursive call to this method
+        mainHandler.post { cb(message) }
+    }
+
     // ── Height reporting ──────────────────────────────────────────────────────
 
     @JavascriptInterface

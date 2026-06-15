@@ -43,11 +43,11 @@ class MainActivity : AppCompatActivity() {
             }
 
             override fun onFeedLoaded() {
-                Log.d(TAG, "BTA feed initialised successfully")
+                Log.d(TAG, "onFeedLoaded — content rendered (first non-zero height received)")
             }
 
             override fun onFeedError(error: String) {
-                Log.e(TAG, "BTA feed error: $error")
+                Log.e(TAG, "onFeedError — $error")
             }
         })
     }
@@ -56,6 +56,7 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         btaFeedView.onResume()
 
+        Log.d(TAG, "load() called — waiting for content...")
         btaFeedView.load(
             btaFeedId = BTA_FEED_ID,
             pageUrl = PAGE_URL,

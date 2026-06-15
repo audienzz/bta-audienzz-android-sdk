@@ -65,6 +65,9 @@ class BtaFeedView @JvmOverloads constructor(
     /** Prevents duplicate viewable impression events per [load] call. */
     private var viewableImpressionFired = false
 
+    /** Prevents duplicate [BtaFeedListener.onFeedLoaded] calls per [load] call. */
+    private var feedLoadedFired = false
+
     /**
      * When `true`, the next [load] call with the same feed ID will be a no-op (aside from
      * resuming the WebView). Set to `true` just before [BtaWebViewActivity] opens so that
@@ -125,6 +128,7 @@ class BtaFeedView @JvmOverloads constructor(
 
         currentFeedId = btaFeedId
         viewableImpressionFired = false
+        feedLoadedFired = false
         updateWebViewHeight(0)
 
         // Fire page view event.
@@ -146,10 +150,15 @@ class BtaFeedView @JvmOverloads constructor(
             onHeightChanged = { px ->
                 val scaledPx = (px * resources.displayMetrics.density).toInt()
                 updateWebViewHeight(scaledPx)
+                // Fire onFeedLoaded the first time real content appears (height > 0).
+                if (scaledPx > 0 && !feedLoadedFired) {
+                    feedLoadedFired = true
+                    listener?.onFeedLoaded()
+                }
                 // After content renders, re-check viewport visibility.
                 if (!viewableImpressionFired) post { checkViewabilityAndTrack() }
             },
-            onFeedLoaded = { listener?.onFeedLoaded() },
+            onFeedLoaded = { /* JS SDK initialised — onFeedLoaded fires on first non-zero height */ },
             onFeedError = { error -> listener?.onFeedError(error) },
             onWillOpenWebView = { suppressNextLoad = true },
         )
@@ -291,72 +300,79 @@ class BtaFeedView @JvmOverloads constructor(
                 </style>
             </head>
             <body>
-                <script async src="${CDN_BASE_URL}bta-feed/index.js"></script>
                 <script type="text/javascript">
                     window.adnzBtaFeed = window.adnzBtaFeed || {};
                     window.adnzBtaFeed.queue = window.adnzBtaFeed.queue || [];
                     window.adnzBtaFeed.queue.push(function() {
-                        window.adnzBtaFeed.start({
-                            btaFeedId: '$feedId',
-                            url: '$pageUrl',
-                            webview: true,
-                            $debugLine
-                            $mockLine
-                            onArticleClick: function(payload) {
-                                payload.event.preventDefault();
-                                AndroidBridge.onArticleClick(JSON.stringify({
-                                    article: payload.article,
-                                    btaFeedId: payload.btaFeedId,
-                                    index: payload.index
-                                }));
-                            },
-                            onAdClick: function(payload) {
-                                payload.event.preventDefault();
-                                var unit = payload.adUnit || {};
-                                var ad   = unit.ad || {};
-                                var url = ad.clickUrl || ad.url
-                                       || unit.clickUrl || unit.url || unit.destinationUrl
-                                       || unit.targetUrl || unit.href
-                                       || payload.clickUrl || payload.url || '';
-                                AndroidBridge.onAdClick(JSON.stringify({
-                                    adUnit: unit,
-                                    url: url,
-                                    btaFeedId: payload.btaFeedId,
-                                    index: payload.index
-                                }));
-                            },
-                            onNativeAdClick: function(payload) {
-                                payload.event.preventDefault();
-                                var unit = payload.adUnit || {};
-                                var ad   = unit.ad || {};
-                                var url = ad.clickUrl || ad.url
-                                       || unit.clickUrl || unit.url || unit.destinationUrl
-                                       || unit.targetUrl || unit.href
-                                       || payload.clickUrl || payload.url || '';
-                                AndroidBridge.onNativeAdClick(JSON.stringify({
-                                    adUnit: unit,
-                                    url: url,
-                                    btaFeedId: payload.btaFeedId,
-                                    index: payload.index
-                                }));
-                            },
-                            onAdImpression: function(payload) {
-                                AndroidBridge.onAdImpression(JSON.stringify({
-                                    adUnit: payload.adUnit,
-                                    btaFeedId: payload.btaFeedId,
-                                    index: payload.index
-                                }));
-                            },
-                            onArticleImpression: function(payload) {
-                                AndroidBridge.onArticleImpression(JSON.stringify({
-                                    article: payload.article,
-                                    btaFeedId: payload.btaFeedId,
-                                    index: payload.index
-                                }));
-                            }
-                        });
-
-                        AndroidBridge.onFeedReady();
+                        try {
+                            window.adnzBtaFeed.start({
+                                btaFeedId: '$feedId',
+                                url: '$pageUrl',
+                                webview: true,
+                                $debugLine
+                                $mockLine
+                                onArticleClick: function(payload) {
+                                    payload.event.preventDefault();
+                                    AndroidBridge.onArticleClick(JSON.stringify({
+                                        article: payload.article,
+                                        btaFeedId: payload.btaFeedId,
+                                        index: payload.index
+                                    }));
+                                },
+                                onAdClick: function(payload) {
+                                    payload.event.preventDefault();
+                                    var unit = payload.adUnit || {};
+                                    var ad   = unit.ad || {};
+                                    var url = ad.clickUrl || ad.url
+                                           || unit.clickUrl || unit.url || unit.destinationUrl
+                                           || unit.targetUrl || unit.href
+                                           || payload.clickUrl || payload.url || '';
+                                    AndroidBridge.onAdClick(JSON.stringify({
+                                        adUnit: unit,
+                                        url: url,
+                                        btaFeedId: payload.btaFeedId,
+                                        index: payload.index
+                                    }));
+                                },
+                                onNativeAdClick: function(payload) {
+                                    payload.event.preventDefault();
+                                    var unit = payload.adUnit || {};
+                                    var ad   = unit.ad || {};
+                                    var url = ad.clickUrl || ad.url
+                                           || unit.clickUrl || unit.url || unit.destinationUrl
+                                           || unit.targetUrl || unit.href
+                                           || payload.clickUrl || payload.url || '';
+                                    AndroidBridge.onNativeAdClick(JSON.stringify({
+                                        adUnit: unit,
+                                        url: url,
+                                        btaFeedId: payload.btaFeedId,
+                                        index: payload.index
+                                    }));
+                                },
+                                onAdImpression: function(payload) {
+                                    AndroidBridge.onAdImpression(JSON.stringify({
+                                        adUnit: payload.adUnit,
+                                        btaFeedId: payload.btaFeedId,
+                                        index: payload.index
+                                    }));
+                                },
+                                onArticleImpression: function(payload) {
+                                    AndroidBridge.onArticleImpression(JSON.stringify({
+                                        article: payload.article,
+                                        btaFeedId: payload.btaFeedId,
+                                        index: payload.index
+                                    }));
+                                },
+                                onError: function(error) {
+                                    var msg = error && error.message ? error.message
+                                            : (typeof error === 'string' ? error : 'Feed error');
+                                    AndroidBridge.onFeedError(msg);
+                                }
+                            });
+                        } catch (e) {
+                            AndroidBridge.onFeedError('Failed to start feed: ' + (e && e.message ? e.message : String(e)));
+                            return;
+                        }
 
                         function reportHeight() {
                             var h = document.documentElement.scrollHeight;
@@ -377,6 +393,8 @@ class BtaFeedView @JvmOverloads constructor(
                         reportHeight();
                     });
                 </script>
+                <script async src="${CDN_BASE_URL}bta-feed/index.js"
+                    onerror="AndroidBridge.onFeedError('Failed to load BTA feed script')"></script>
             </body>
             </html>
         """.trimIndent()
