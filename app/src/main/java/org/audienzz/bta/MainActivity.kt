@@ -79,7 +79,7 @@ class MainActivity : AppCompatActivity() {
         private const val TAG = "BtaExample"
 
         /** Replace with your real BTA feed ID. */
-        private const val BTA_FEED_ID = "92692c82-cb38-4164-b77c-e89d56cb486d"
+        private const val BTA_FEED_ID = "5b0a5694-de8d-4ddb-8bd4-a871bb55f09b"
 
         /** Replace with the canonical URL of the article page hosting this feed. */
         private const val PAGE_URL = "https://www.example.com/article/sample-article"

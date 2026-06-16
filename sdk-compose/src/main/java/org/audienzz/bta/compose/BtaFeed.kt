@@ -44,6 +44,8 @@ import org.audienzz.bta.sdk.model.ArticleClickPayload
  * @param debug               Enable feed debug logging (**do not use in production**).
  * @param mockRecommendations Show mock recommendations instead of real ones
  *                            (**do not use in production**).
+ * @param isDarkMode          Override the color scheme: `true` forces dark theme, `false` forces
+ *                            light theme, `null` (default) auto-detects from the system.
  * @param onArticleClick      Called when the user taps an article. Return `true` to handle
  *                            navigation yourself; return `false` (default) to let the SDK
  *                            open the URL in a fullscreen WebView.
@@ -60,6 +62,7 @@ fun BtaFeed(
     modifier: Modifier = Modifier,
     debug: Boolean = false,
     mockRecommendations: Boolean = false,
+    isDarkMode: Boolean? = null,
     onArticleClick: ((ArticleClickPayload) -> Boolean)? = null,
     onAdClick: ((AdClickPayload) -> Boolean)? = null,
     onFeedLoaded: (() -> Unit)? = null,
@@ -74,6 +77,7 @@ fun BtaFeed(
     val currentPageUrl by rememberUpdatedState(pageUrl)
     val currentDebug by rememberUpdatedState(debug)
     val currentMockRecs by rememberUpdatedState(mockRecommendations)
+    val currentIsDarkMode by rememberUpdatedState(isDarkMode)
     val currentOnArticleClick by rememberUpdatedState(onArticleClick)
     val currentOnAdClick by rememberUpdatedState(onAdClick)
     val currentOnFeedLoaded by rememberUpdatedState(onFeedLoaded)
@@ -114,7 +118,7 @@ fun BtaFeed(
                         }
                     })
                     view.onResume()
-                    view.load(currentBtaFeedId, currentPageUrl, currentDebug, currentMockRecs)
+                    view.load(currentBtaFeedId, currentPageUrl, currentDebug, currentMockRecs, currentIsDarkMode)
                 }
                 Lifecycle.Event.ON_PAUSE -> view.onPause()
                 else -> Unit

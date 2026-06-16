@@ -109,6 +109,9 @@ class BtaFeedView @JvmOverloads constructor(
      * @param debug                 Enable feed debug logging (**do not use in production**).
      * @param mockRecommendations   Show mock recommendations instead of real ones
      *                              (**do not use in production**).
+     * @param isDarkMode            Override the color scheme: `true` forces dark theme,
+     *                              `false` forces light theme, `null` (default) auto-detects
+     *                              from the system via `prefers-color-scheme`.
      */
     @JvmOverloads
     fun load(
@@ -116,6 +119,7 @@ class BtaFeedView @JvmOverloads constructor(
         pageUrl: String,
         debug: Boolean = false,
         mockRecommendations: Boolean = false,
+        isDarkMode: Boolean? = null,
     ) {
         // If we're returning from BtaWebViewActivity for the same feed, skip the reload.
         // The WebView already has the content; just resume it and clear the flag.
@@ -164,7 +168,7 @@ class BtaFeedView @JvmOverloads constructor(
         )
         webView.addJavascriptInterface(bridge, JS_BRIDGE_NAME)
 
-        val html = buildHtml(btaFeedId, pageUrl, debug, mockRecommendations)
+        val html = buildHtml(btaFeedId, pageUrl, debug, mockRecommendations, isDarkMode)
         webView.loadDataWithBaseURL(CDN_BASE_URL, html, "text/html", "UTF-8", null)
     }
 
@@ -229,6 +233,7 @@ class BtaFeedView @JvmOverloads constructor(
             mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
         }
         // Disable internal scrolling — the parent ScrollView handles all scrolling.
+        webView.setBackgroundColor(android.graphics.Color.TRANSPARENT)
         webView.isVerticalScrollBarEnabled = false
         webView.isHorizontalScrollBarEnabled = false
         webView.overScrollMode = OVER_SCROLL_NEVER
@@ -280,9 +285,15 @@ class BtaFeedView @JvmOverloads constructor(
         pageUrl: String,
         debug: Boolean,
         mockRecommendations: Boolean,
+        isDarkMode: Boolean?,
     ): String {
         val debugLine = if (debug) "debug: true," else ""
         val mockLine = if (mockRecommendations) "mockRecommendations: true," else ""
+        val darkLine = when (isDarkMode) {
+            true  -> "forceDarkTheme: true,"
+            false -> ""
+            null  -> "isDarkThemeSupported: true,"
+        }
 
         // Uses plain function() syntax for API 24 WebView compatibility.
         // onAdImpression and onArticleImpression handlers are wired and ready —
@@ -311,6 +322,7 @@ class BtaFeedView @JvmOverloads constructor(
                                 webview: true,
                                 $debugLine
                                 $mockLine
+                                $darkLine
                                 onArticleClick: function(payload) {
                                     payload.event.preventDefault();
                                     AndroidBridge.onArticleClick(JSON.stringify({
