@@ -1,5 +1,6 @@
 package org.audienzz.bta.sdk
 
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -146,7 +147,10 @@ internal class BtaJsBridge(
         if (url.isBlank()) return
         onWillOpenWebView()
         val intent = BtaWebViewActivity.createIntent(context, url).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            // FLAG_ACTIVITY_NEW_TASK is only required when starting from a non-Activity context.
+            // Using it from an Activity context causes a task switch that triggers a layout
+            // reflow in the parent ScrollView, scrolling it to the top before the article opens.
+            if (context !is Activity) addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         try {
             context.startActivity(intent)
