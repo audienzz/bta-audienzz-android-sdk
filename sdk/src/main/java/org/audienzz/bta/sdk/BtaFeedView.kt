@@ -126,6 +126,17 @@ class BtaFeedView @JvmOverloads constructor(
         if (suppressNextLoad && btaFeedId == currentFeedId) {
             suppressNextLoad = false
             webView.onResume()
+            // Re-query the current height — the layout may have grown while we were away
+            // (e.g. teaser images finished loading), so the constraint from before the
+            // article opened could be too short and clip the feed.
+            webView.evaluateJavascript(
+                "Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0)"
+            ) { value ->
+                val cssPx = value?.toFloatOrNull() ?: return@evaluateJavascript
+                if (cssPx > 0f) {
+                    updateWebViewHeight((cssPx * resources.displayMetrics.density).toInt())
+                }
+            }
             return
         }
         suppressNextLoad = false
@@ -386,14 +397,24 @@ class BtaFeedView @JvmOverloads constructor(
                             return;
                         }
 
+                        // Use the largest of documentElement/body scroll & offset heights so a
+                        // late-loading image or an un-collapsed bottom margin can't clip the feed.
                         function reportHeight() {
-                            var h = document.documentElement.scrollHeight;
+                            var doc = document.documentElement;
+                            var body = document.body;
+                            var h = Math.max(
+                                doc ? doc.scrollHeight : 0,
+                                doc ? doc.offsetHeight : 0,
+                                body ? body.scrollHeight : 0,
+                                body ? body.offsetHeight : 0
+                            );
                             AndroidBridge.onContentHeightChanged(h);
                         }
 
                         if (window.ResizeObserver) {
-                            new ResizeObserver(function() { reportHeight(); })
-                                .observe(document.documentElement);
+                            var ro = new ResizeObserver(function() { reportHeight(); });
+                            ro.observe(document.documentElement);
+                            if (document.body) ro.observe(document.body);
                         } else {
                             new MutationObserver(function() { reportHeight(); })
                                 .observe(document.body, {
@@ -402,6 +423,12 @@ class BtaFeedView @JvmOverloads constructor(
                                     attributes: true
                                 });
                         }
+                        // Re-measure once every image has decoded — recommendation teasers are
+                        // added dynamically, so their loads can expand the layout after first paint.
+                        window.addEventListener('load', function() { reportHeight(); });
+                        document.addEventListener('load', function(e) {
+                            if (e.target && e.target.tagName === 'IMG') reportHeight();
+                        }, true);
                         reportHeight();
                     });
                 </script>
