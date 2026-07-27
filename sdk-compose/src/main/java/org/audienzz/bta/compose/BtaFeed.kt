@@ -2,6 +2,7 @@ package org.audienzz.bta.compose
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -46,6 +47,9 @@ import org.audienzz.bta.sdk.model.ArticleClickPayload
  *                            (**do not use in production**).
  * @param isDarkMode          Override the color scheme: `true` forces dark theme, `false` forces
  *                            light theme, `null` (default) auto-detects from the system.
+ * @param reloadToken         Change this to any new value to refresh the feed content in place
+ *                            (fresh recommendations) without collapsing the feed height — no
+ *                            blank flash or jump. Leave unchanged to avoid reloading.
  * @param onArticleClick      Called when the user taps an article. Return `true` to handle
  *                            navigation yourself; return `false` (default) to let the SDK
  *                            open the URL in a fullscreen WebView.
@@ -63,6 +67,7 @@ fun BtaFeed(
     debug: Boolean = false,
     mockRecommendations: Boolean = false,
     isDarkMode: Boolean? = null,
+    reloadToken: Any? = null,
     onArticleClick: ((ArticleClickPayload) -> Boolean)? = null,
     onAdClick: ((AdClickPayload) -> Boolean)? = null,
     onFeedLoaded: (() -> Unit)? = null,
@@ -93,6 +98,18 @@ fun BtaFeed(
         },
         modifier = modifier,
     )
+
+    // Reload trigger: when reloadToken changes to a new value (after the initial
+    // composition), refresh the content in place without collapsing the height.
+    // The first run is skipped — the ON_RESUME observer performs the initial load.
+    val isFirstToken = remember { mutableStateOf(true) }
+    LaunchedEffect(reloadToken) {
+        if (isFirstToken.value) {
+            isFirstToken.value = false
+        } else {
+            viewRef.value?.reload()
+        }
+    }
 
     // LifecycleRegistry replays events to newly added observers, so if the
     // composable enters composition on an already-RESUMED screen, ON_RESUME

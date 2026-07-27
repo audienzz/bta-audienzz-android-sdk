@@ -107,7 +107,10 @@ class ArticleActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         btaFeedView.onResume()
-        btaFeedView.load(btaFeedId = "your-bta-feed-id")
+        btaFeedView.load(
+            btaFeedId = "your-bta-feed-id",
+            pageUrl = "https://your-site.com/the-article", // canonical URL of the hosting page
+        )
     }
 
     override fun onPause() {
@@ -137,6 +140,7 @@ fun ArticleScreen() {
 
         BtaFeed(
             btaFeedId = "your-bta-feed-id",
+            pageUrl = "https://your-site.com/the-article",
             modifier = Modifier.fillMaxWidth(),
             onArticleClick = { payload ->
                 false  // false → SDK opens fullscreen browser
@@ -193,12 +197,37 @@ override fun onArticleClick(payload: ArticleClickPayload): Boolean {
 
 ---
 
+## Refreshing content
+
+If your app refreshes page content on navigation (including back navigation) and you want
+fresh recommendations, call `reload()`. Unlike `load()`, it does **not** collapse the feed
+height to 0 first — the current height is kept and adjusts smoothly once the new content is
+measured, so there is no blank flash or layout jump.
+
+```kotlin
+btaFeedView.reload()   // replays the last load() parameters with fresh recommendations
+```
+
+> Note: the recommendation system currently serves fresh content on a **3-hour refresh
+> interval**, so calling `reload()` more often than that may return the same items.
+
+In Compose, change the `reloadToken` parameter to any new value to trigger the same in-place refresh:
+
+```kotlin
+var reloadToken by remember { mutableStateOf(0) }
+BtaFeed(btaFeedId = "…", pageUrl = "…", reloadToken = reloadToken)
+// later: reloadToken++   → refreshes in place
+```
+
+---
+
 ## BtaFeedView API reference
 
 | Method | Description |
 |--------|-------------|
 | `setListener(listener)` | Set or replace the event listener |
-| `load(btaFeedId, debug, mockRecommendations)` | Load the feed. Call from `onResume()` |
+| `load(btaFeedId, pageUrl, debug, mockRecommendations, isDarkMode)` | Load the feed. Call from `onResume()` |
+| `reload()` | Refresh content in place without collapsing the height. Replays the last `load()` params |
 | `onResume()` | Resume the WebView. Call from `Activity.onResume()` |
 | `onPause()` | Pause the WebView. Call from `Activity.onPause()` |
 | `destroy()` | Release resources. Call from `Activity.onDestroy()` |
@@ -210,9 +239,12 @@ override fun onArticleClick(payload: ArticleClickPayload): Boolean {
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `btaFeedId` | `String` | — | Required. Feed identifier |
+| `pageUrl` | `String` | — | Required. Canonical URL of the hosting page (used for contextual recommendations) |
 | `modifier` | `Modifier` | `Modifier` | Standard Compose modifier |
 | `debug` | `Boolean` | `false` | Enable feed debug logging. **Do not use in production** |
 | `mockRecommendations` | `Boolean` | `false` | Show mock content. **Do not use in production** |
+| `isDarkMode` | `Boolean?` | `null` | `true` forces dark, `false` forces light, `null` auto-detects from the system |
+| `reloadToken` | `Any?` | `null` | Change to a new value to refresh content in place without collapsing the height |
 | `onArticleClick` | `(ArticleClickPayload) -> Boolean` | `null` | `null` behaves as returning `false` |
 | `onAdClick` | `(AdClickPayload) -> Boolean` | `null` | `null` behaves as returning `false` |
 | `onFeedLoaded` | `() -> Unit` | `null` | Called when the feed initialises |

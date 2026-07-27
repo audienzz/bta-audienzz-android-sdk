@@ -62,6 +62,16 @@ class BtaFeedView @JvmOverloads constructor(
     /** Feed ID from the most recent [load] call. */
     private var currentFeedId: String? = null
 
+    /** Parameters from the most recent real load, replayed by [reload]. */
+    private data class LoadParams(
+        val btaFeedId: String,
+        val pageUrl: String,
+        val debug: Boolean,
+        val mockRecommendations: Boolean,
+        val isDarkMode: Boolean?,
+    )
+    private var lastLoadParams: LoadParams? = null
+
     /** Prevents duplicate viewable impression events per [load] call. */
     private var viewableImpressionFired = false
 
@@ -140,14 +150,39 @@ class BtaFeedView @JvmOverloads constructor(
             return
         }
         suppressNextLoad = false
+        performLoad(
+            LoadParams(btaFeedId, pageUrl, debug, mockRecommendations, isDarkMode),
+            resetHeight = true,
+        )
+    }
 
-        currentFeedId = btaFeedId
+    /**
+     * Reload the feed content in place — fetches fresh recommendations without first
+     * collapsing the view height to 0, so there is no blank flash or layout jump. The
+     * height adjusts smoothly once the new content reports its size.
+     *
+     * Use this when your app refreshes page content (e.g. on back navigation) and you
+     * want new recommendations without the initial-load height reset. Replays the most
+     * recent [load] parameters; no-op if [load] has never been called.
+     */
+    fun reload() {
+        val params = lastLoadParams ?: return
+        // Skip the suppress-on-return flag — this is an explicit content refresh.
+        suppressNextLoad = false
+        performLoad(params, resetHeight = false)
+    }
+
+    private fun performLoad(params: LoadParams, resetHeight: Boolean) {
+        currentFeedId = params.btaFeedId
+        lastLoadParams = params
         viewableImpressionFired = false
         feedLoadedFired = false
-        updateWebViewHeight(0)
+        // On a reload we keep the current height so the feed doesn't collapse to 0;
+        // the new content adjusts it once measured.
+        if (resetHeight) updateWebViewHeight(0)
 
         // Fire page view event.
-        fireEvent(BtaEventType.PAGEVIEW, btaFeedId)
+        fireEvent(BtaEventType.PAGEVIEW, params.btaFeedId)
 
         // Register scroll listener for viewable impression detection.
         viewTreeObserver.removeOnScrollChangedListener(scrollChangedListener)
@@ -160,7 +195,7 @@ class BtaFeedView @JvmOverloads constructor(
 
         val bridge = BtaJsBridge(
             context = context,
-            btaFeedId = btaFeedId,
+            btaFeedId = params.btaFeedId,
             listener = listener,
             onHeightChanged = { px ->
                 val scaledPx = (px * resources.displayMetrics.density).toInt()
@@ -179,7 +214,13 @@ class BtaFeedView @JvmOverloads constructor(
         )
         webView.addJavascriptInterface(bridge, JS_BRIDGE_NAME)
 
-        val html = buildHtml(btaFeedId, pageUrl, debug, mockRecommendations, isDarkMode)
+        val html = buildHtml(
+            params.btaFeedId,
+            params.pageUrl,
+            params.debug,
+            params.mockRecommendations,
+            params.isDarkMode,
+        )
         webView.loadDataWithBaseURL(CDN_BASE_URL, html, "text/html", "UTF-8", null)
     }
 
