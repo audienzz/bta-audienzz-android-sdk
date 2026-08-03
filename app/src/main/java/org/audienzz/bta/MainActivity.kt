@@ -4,6 +4,7 @@ import android.os.Bundle
 import android.util.Log
 import android.webkit.WebView
 import androidx.appcompat.app.AppCompatActivity
+import com.google.android.material.floatingactionbutton.FloatingActionButton
 import org.audienzz.bta.sdk.BtaFeedListener
 import org.audienzz.bta.sdk.BtaFeedView
 import org.audienzz.bta.sdk.BtaSdk
@@ -50,6 +51,12 @@ class MainActivity : AppCompatActivity() {
                 Log.e(TAG, "onFeedError — $error")
             }
         })
+
+        // Floating button: refresh recommendations in place via reload().
+        findViewById<FloatingActionButton>(R.id.reloadFab).setOnClickListener {
+            Log.d(TAG, "reload() called from FAB")
+            btaFeedView.reload()
+        }
     }
 
     override fun onResume() {

@@ -72,6 +72,14 @@ class BtaFeedView @JvmOverloads constructor(
     )
     private var lastLoadParams: LoadParams? = null
 
+    /**
+     * While > 0, a [reload] is in progress and the view height must not shrink below this
+     * value — it holds the pre-reload height so the feed doesn't collapse to ~0 while the
+     * new (blank-then-growing) content loads. Released once the new content grows back to
+     * this height, or by [releaseReloadFloor] after [RELOAD_FLOOR_TIMEOUT_MS].
+     */
+    private var reloadHeightFloorPx = 0
+
     /** Prevents duplicate viewable impression events per [load] call. */
     private var viewableImpressionFired = false
 
@@ -159,7 +167,8 @@ class BtaFeedView @JvmOverloads constructor(
     /**
      * Reload the feed content in place — fetches fresh recommendations without first
      * collapsing the view height to 0, so there is no blank flash or layout jump. The
-     * height adjusts smoothly once the new content reports its size.
+     * pre-reload height is held while the new content loads and only settles to the new
+     * size once it has rendered, so the feed does not visibly jump.
      *
      * Use this when your app refreshes page content (e.g. on back navigation) and you
      * want new recommendations without the initial-load height reset. Replays the most
@@ -169,7 +178,25 @@ class BtaFeedView @JvmOverloads constructor(
         val params = lastLoadParams ?: return
         // Skip the suppress-on-return flag — this is an explicit content refresh.
         suppressNextLoad = false
+        // Hold the current height so the feed doesn't collapse while the new content
+        // loads (the fresh page reports a near-zero height before the feed renders).
+        reloadHeightFloorPx = webView.height.takeIf { it > 0 } ?: 0
         performLoad(params, resetHeight = false)
+        // Safety net: release the floor after a max wait so a genuinely shorter feed
+        // settles to its true (smaller) height even if it never reaches the old one.
+        postDelayed({ releaseReloadFloor() }, RELOAD_FLOOR_TIMEOUT_MS)
+    }
+
+    /** Drop the reload height floor and settle to the new content's true height. */
+    private fun releaseReloadFloor() {
+        if (reloadHeightFloorPx == 0) return
+        reloadHeightFloorPx = 0
+        webView.evaluateJavascript(
+            "Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0)"
+        ) { value ->
+            val cssPx = value?.toFloatOrNull() ?: return@evaluateJavascript
+            if (cssPx > 0f) updateWebViewHeight((cssPx * resources.displayMetrics.density).toInt())
+        }
     }
 
     private fun performLoad(params: LoadParams, resetHeight: Boolean) {
@@ -177,9 +204,12 @@ class BtaFeedView @JvmOverloads constructor(
         lastLoadParams = params
         viewableImpressionFired = false
         feedLoadedFired = false
-        // On a reload we keep the current height so the feed doesn't collapse to 0;
-        // the new content adjusts it once measured.
-        if (resetHeight) updateWebViewHeight(0)
+        // On a full load we reset to 0 and clear any reload floor; on a reload the floor
+        // (set by reload()) keeps the current height so the feed doesn't collapse.
+        if (resetHeight) {
+            reloadHeightFloorPx = 0
+            updateWebViewHeight(0)
+        }
 
         // Fire page view event.
         fireEvent(BtaEventType.PAGEVIEW, params.btaFeedId)
@@ -199,7 +229,14 @@ class BtaFeedView @JvmOverloads constructor(
             listener = listener,
             onHeightChanged = { px ->
                 val scaledPx = (px * resources.displayMetrics.density).toInt()
-                updateWebViewHeight(scaledPx)
+                if (reloadHeightFloorPx > 0) {
+                    // Mid-reload: never shrink below the pre-reload height. Once the new
+                    // content grows back to it, following the true height is safe again.
+                    updateWebViewHeight(maxOf(scaledPx, reloadHeightFloorPx))
+                    if (scaledPx >= reloadHeightFloorPx) reloadHeightFloorPx = 0
+                } else {
+                    updateWebViewHeight(scaledPx)
+                }
                 // Fire onFeedLoaded the first time real content appears (height > 0).
                 if (scaledPx > 0 && !feedLoadedFired) {
                     feedLoadedFired = true
@@ -483,6 +520,9 @@ class BtaFeedView @JvmOverloads constructor(
     companion object {
         private const val TAG = "BtaFeedView"
         private const val JS_BRIDGE_NAME = "AndroidBridge"
+
+        /** Max time the reload height floor is held before settling to the new height. */
+        private const val RELOAD_FLOOR_TIMEOUT_MS = 1500L
 
         internal const val CDN_BASE_URL = "https://cdn.adnz.co/"
     }
