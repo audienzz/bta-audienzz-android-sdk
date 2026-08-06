@@ -80,6 +80,9 @@ class BtaFeedView @JvmOverloads constructor(
      */
     private var reloadHeightFloorPx = 0
 
+    /** Set in [destroy]; blocks pending delayed callbacks from touching the destroyed WebView. */
+    private var destroyed = false
+
     /** Prevents duplicate viewable impression events per [load] call. */
     private var viewableImpressionFired = false
 
@@ -150,6 +153,7 @@ class BtaFeedView @JvmOverloads constructor(
             webView.evaluateJavascript(
                 "Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0)"
             ) { value ->
+                if (destroyed) return@evaluateJavascript
                 val cssPx = value?.toFloatOrNull() ?: return@evaluateJavascript
                 if (cssPx > 0f) {
                     updateWebViewHeight((cssPx * resources.displayMetrics.density).toInt())
@@ -189,11 +193,12 @@ class BtaFeedView @JvmOverloads constructor(
 
     /** Drop the reload height floor and settle to the new content's true height. */
     private fun releaseReloadFloor() {
-        if (reloadHeightFloorPx == 0) return
+        if (destroyed || reloadHeightFloorPx == 0) return
         reloadHeightFloorPx = 0
         webView.evaluateJavascript(
             "Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0)"
         ) { value ->
+            if (destroyed) return@evaluateJavascript
             val cssPx = value?.toFloatOrNull() ?: return@evaluateJavascript
             if (cssPx > 0f) updateWebViewHeight((cssPx * resources.displayMetrics.density).toInt())
         }
@@ -269,6 +274,9 @@ class BtaFeedView @JvmOverloads constructor(
 
     /** Call from `Activity.onDestroy()` or `Fragment.onDestroyView()`. */
     fun destroy() {
+        // Block any pending delayed callbacks (e.g. the reload-floor release) from touching
+        // the WebView after it's destroyed — that is undefined behavior and crashes some OEMs.
+        destroyed = true
         if (viewTreeObserver.isAlive) {
             viewTreeObserver.removeOnScrollChangedListener(scrollChangedListener)
         }
