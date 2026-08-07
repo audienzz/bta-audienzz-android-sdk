@@ -50,6 +50,9 @@ import org.audienzz.bta.sdk.model.ArticleClickPayload
  * @param reloadToken         Change this to any new value to refresh the feed content in place
  *                            (fresh recommendations) without collapsing the feed height — no
  *                            blank flash or jump. Leave unchanged to avoid reloading.
+ * @param isLoadingHolderEnabled When `true` (default), the SDK shows a loading spinner with
+ *                            reserved height during the initial load. Set `false` to show your
+ *                            own placeholder instead.
  * @param onArticleClick      Called when the user taps an article. Return `true` to handle
  *                            navigation yourself; return `false` (default) to let the SDK
  *                            open the URL in a fullscreen WebView.
@@ -68,6 +71,7 @@ fun BtaFeed(
     mockRecommendations: Boolean = false,
     isDarkMode: Boolean? = null,
     reloadToken: Any? = null,
+    isLoadingHolderEnabled: Boolean = true,
     onArticleClick: ((ArticleClickPayload) -> Boolean)? = null,
     onAdClick: ((AdClickPayload) -> Boolean)? = null,
     onFeedLoaded: (() -> Unit)? = null,
@@ -83,6 +87,7 @@ fun BtaFeed(
     val currentDebug by rememberUpdatedState(debug)
     val currentMockRecs by rememberUpdatedState(mockRecommendations)
     val currentIsDarkMode by rememberUpdatedState(isDarkMode)
+    val currentIsLoadingHolderEnabled by rememberUpdatedState(isLoadingHolderEnabled)
     val currentOnArticleClick by rememberUpdatedState(onArticleClick)
     val currentOnAdClick by rememberUpdatedState(onAdClick)
     val currentOnFeedLoaded by rememberUpdatedState(onFeedLoaded)
@@ -135,7 +140,14 @@ fun BtaFeed(
                         }
                     })
                     view.onResume()
-                    view.load(currentBtaFeedId, currentPageUrl, currentDebug, currentMockRecs, currentIsDarkMode)
+                    view.load(
+                        currentBtaFeedId,
+                        currentPageUrl,
+                        currentDebug,
+                        currentMockRecs,
+                        currentIsDarkMode,
+                        currentIsLoadingHolderEnabled,
+                    )
                 }
                 Lifecycle.Event.ON_PAUSE -> view.onPause()
                 else -> Unit

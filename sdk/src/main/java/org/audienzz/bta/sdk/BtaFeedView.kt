@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Rect
 import android.util.AttributeSet
 import android.util.Log
+import android.view.Gravity
 import android.view.ViewTreeObserver
 import android.webkit.ConsoleMessage
 import android.webkit.WebChromeClient
@@ -12,6 +13,7 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.FrameLayout
+import android.widget.ProgressBar
 import org.audienzz.bta.sdk.analytics.BtaEvent
 import org.audienzz.bta.sdk.analytics.BtaEventTracker
 import org.audienzz.bta.sdk.analytics.BtaEventType
@@ -57,7 +59,14 @@ class BtaFeedView @JvmOverloads constructor(
 ) : FrameLayout(context, attrs, defStyleAttr) {
 
     private val webView: WebView = WebView(context)
+    private val progressBar: ProgressBar = ProgressBar(context)
     private var listener: BtaFeedListener? = null
+
+    /** True while the initial-load spinner is shown (height reserved, not 0). */
+    private var loading = false
+
+    /** Bumped per load so a stale loading-timeout can't collapse a newer load. */
+    private var loadGeneration = 0
 
     /** Feed ID from the most recent [load] call. */
     private var currentFeedId: String? = null
@@ -69,6 +78,7 @@ class BtaFeedView @JvmOverloads constructor(
         val debug: Boolean,
         val mockRecommendations: Boolean,
         val isDarkMode: Boolean?,
+        val isLoadingHolderEnabled: Boolean,
     )
     private var lastLoadParams: LoadParams? = null
 
@@ -106,6 +116,16 @@ class BtaFeedView @JvmOverloads constructor(
         BtaEventTracker.init(context)
         setupWebView()
         addView(webView, LayoutParams(LayoutParams.MATCH_PARENT, 0))
+        // Centered loading spinner, shown over the reserved height during the initial load.
+        progressBar.visibility = GONE
+        addView(
+            progressBar,
+            LayoutParams(
+                LayoutParams.WRAP_CONTENT,
+                LayoutParams.WRAP_CONTENT,
+                Gravity.CENTER,
+            ),
+        )
     }
 
     // ── Public API ─────────────────────────────────────────────────────────────
@@ -133,6 +153,10 @@ class BtaFeedView @JvmOverloads constructor(
      * @param isDarkMode            Override the color scheme: `true` forces dark theme,
      *                              `false` forces light theme, `null` (default) auto-detects
      *                              from the system via `prefers-color-scheme`.
+     * @param isLoadingHolderEnabled When `true` (default), the SDK reserves height and shows
+     *                              a loading spinner during the initial load. Set `false` to
+     *                              suppress it and show your own loading placeholder instead
+     *                              (the feed stays at 0 height until content arrives).
      */
     @JvmOverloads
     fun load(
@@ -141,6 +165,7 @@ class BtaFeedView @JvmOverloads constructor(
         debug: Boolean = false,
         mockRecommendations: Boolean = false,
         isDarkMode: Boolean? = null,
+        isLoadingHolderEnabled: Boolean = true,
     ) {
         // If we're returning from BtaWebViewActivity for the same feed, skip the reload.
         // The WebView already has the content; just resume it and clear the flag.
@@ -163,7 +188,7 @@ class BtaFeedView @JvmOverloads constructor(
         }
         suppressNextLoad = false
         performLoad(
-            LoadParams(btaFeedId, pageUrl, debug, mockRecommendations, isDarkMode),
+            LoadParams(btaFeedId, pageUrl, debug, mockRecommendations, isDarkMode, isLoadingHolderEnabled),
             resetHeight = true,
         )
     }
@@ -209,11 +234,12 @@ class BtaFeedView @JvmOverloads constructor(
         lastLoadParams = params
         viewableImpressionFired = false
         feedLoadedFired = false
-        // On a full load we reset to 0 and clear any reload floor; on a reload the floor
-        // (set by reload()) keeps the current height so the feed doesn't collapse.
+        // On a full load, show the loading state (reserved height + spinner) instead of
+        // collapsing to 0 — unless the publisher opted out to show their own placeholder;
+        // on a reload the floor (set by reload()) keeps the current height.
         if (resetHeight) {
             reloadHeightFloorPx = 0
-            updateWebViewHeight(0)
+            if (params.isLoadingHolderEnabled) setLoading(true) else updateWebViewHeight(0)
         }
 
         // Fire page view event.
@@ -234,24 +260,39 @@ class BtaFeedView @JvmOverloads constructor(
             listener = listener,
             onHeightChanged = { px ->
                 val scaledPx = (px * resources.displayMetrics.density).toInt()
-                if (reloadHeightFloorPx > 0) {
-                    // Mid-reload: never shrink below the pre-reload height. Once the new
-                    // content grows back to it, following the true height is safe again.
-                    updateWebViewHeight(maxOf(scaledPx, reloadHeightFloorPx))
-                    if (scaledPx >= reloadHeightFloorPx) reloadHeightFloorPx = 0
+                // While the loading state is shown, ignore empty-height reports (the page
+                // reports ~0 until the feed renders); switch to real content on the first
+                // non-zero height.
+                if (loading && scaledPx <= 0) {
+                    // keep spinner + reserved height
                 } else {
-                    updateWebViewHeight(scaledPx)
+                    if (loading) setLoading(false)
+                    if (reloadHeightFloorPx > 0) {
+                        // Mid-reload: never shrink below the pre-reload height. Once the new
+                        // content grows back to it, following the true height is safe again.
+                        updateWebViewHeight(maxOf(scaledPx, reloadHeightFloorPx))
+                        if (scaledPx >= reloadHeightFloorPx) reloadHeightFloorPx = 0
+                    } else {
+                        updateWebViewHeight(scaledPx)
+                    }
+                    // Fire onFeedLoaded the first time real content appears (height > 0).
+                    if (scaledPx > 0 && !feedLoadedFired) {
+                        feedLoadedFired = true
+                        listener?.onFeedLoaded()
+                    }
+                    // After content renders, re-check viewport visibility.
+                    if (!viewableImpressionFired) post { checkViewabilityAndTrack() }
                 }
-                // Fire onFeedLoaded the first time real content appears (height > 0).
-                if (scaledPx > 0 && !feedLoadedFired) {
-                    feedLoadedFired = true
-                    listener?.onFeedLoaded()
-                }
-                // After content renders, re-check viewport visibility.
-                if (!viewableImpressionFired) post { checkViewabilityAndTrack() }
             },
             onFeedLoaded = { /* JS SDK initialised — onFeedLoaded fires on first non-zero height */ },
-            onFeedError = { error -> listener?.onFeedError(error) },
+            onFeedError = { error ->
+                // No content will render — clear the loading state and collapse.
+                if (loading) {
+                    setLoading(false)
+                    updateWebViewHeight(0)
+                }
+                listener?.onFeedError(error)
+            },
             onWillOpenWebView = { suppressNextLoad = true },
         )
         webView.addJavascriptInterface(bridge, JS_BRIDGE_NAME)
@@ -374,6 +415,28 @@ class BtaFeedView @JvmOverloads constructor(
             lp.height = heightPx
             webView.layoutParams = lp
             requestLayout()
+        }
+    }
+
+    /**
+     * Toggle the initial-load loading state. When enabled, reserves [LOADING_HEIGHT_DP] of
+     * height and shows a centered spinner instead of collapsing to 0; a timeout collapses
+     * it if content never arrives, so there is no permanent dead space.
+     */
+    private fun setLoading(isLoading: Boolean) {
+        loading = isLoading
+        if (isLoading) {
+            progressBar.visibility = VISIBLE
+            updateWebViewHeight((LOADING_HEIGHT_DP * resources.displayMetrics.density).toInt())
+            val generation = ++loadGeneration
+            postDelayed({
+                if (!destroyed && loading && generation == loadGeneration) {
+                    setLoading(false)
+                    updateWebViewHeight(0)
+                }
+            }, LOADING_TIMEOUT_MS)
+        } else {
+            progressBar.visibility = GONE
         }
     }
 
@@ -531,6 +594,12 @@ class BtaFeedView @JvmOverloads constructor(
 
         /** Max time the reload height floor is held before settling to the new height. */
         private const val RELOAD_FLOOR_TIMEOUT_MS = 1500L
+
+        /** Reserved height (dp) shown with a spinner during the initial load. */
+        private const val LOADING_HEIGHT_DP = 120f
+
+        /** Max time the loading spinner shows before collapsing if no content arrives. */
+        private const val LOADING_TIMEOUT_MS = 10_000L
 
         internal const val CDN_BASE_URL = "https://cdn.adnz.co/"
     }

@@ -221,12 +221,34 @@ BtaFeed(btaFeedId = "…", pageUrl = "…", reloadToken = reloadToken)
 
 ---
 
+## Loading state
+
+During the initial `load()`, the feed reserves a small height and shows a centered loading
+spinner instead of appearing at zero height. Once content arrives it resizes to fit; if the
+feed errors or returns nothing (or a timeout elapses), it collapses so there is no empty space.
+
+To show **your own** placeholder instead, disable the built-in one with
+`isLoadingHolderEnabled = false` and use `onFeedLoaded` / `onFeedError` to hide yours:
+
+```kotlin
+btaFeedView.load(
+    btaFeedId = "your-bta-feed-id",
+    pageUrl = "https://your-site.com/the-article",
+    isLoadingHolderEnabled = false, // SDK stays at 0 height until content arrives
+)
+// show your own placeholder now; hide it in onFeedLoaded() / onFeedError()
+```
+
+In Compose, pass `isLoadingHolderEnabled = false` to `BtaFeed`.
+
+---
+
 ## BtaFeedView API reference
 
 | Method | Description |
 |--------|-------------|
 | `setListener(listener)` | Set or replace the event listener |
-| `load(btaFeedId, pageUrl, debug, mockRecommendations, isDarkMode)` | Load the feed. Call from `onResume()` |
+| `load(btaFeedId, pageUrl, debug, mockRecommendations, isDarkMode, isLoadingHolderEnabled)` | Load the feed. Call from `onResume()` |
 | `reload()` | Refresh content in place without collapsing the height. Replays the last `load()` params |
 | `onResume()` | Resume the WebView. Call from `Activity.onResume()` |
 | `onPause()` | Pause the WebView. Call from `Activity.onPause()` |
@@ -245,6 +267,7 @@ BtaFeed(btaFeedId = "…", pageUrl = "…", reloadToken = reloadToken)
 | `mockRecommendations` | `Boolean` | `false` | Show mock content. **Do not use in production** |
 | `isDarkMode` | `Boolean?` | `null` | `true` forces dark, `false` forces light, `null` auto-detects from the system |
 | `reloadToken` | `Any?` | `null` | Change to a new value to refresh content in place without collapsing the height |
+| `isLoadingHolderEnabled` | `Boolean` | `true` | Show the SDK's loading spinner (reserved height) on initial load; `false` to use your own placeholder |
 | `onArticleClick` | `(ArticleClickPayload) -> Boolean` | `null` | `null` behaves as returning `false` |
 | `onAdClick` | `(AdClickPayload) -> Boolean` | `null` | `null` behaves as returning `false` |
 | `onFeedLoaded` | `() -> Unit` | `null` | Called when the feed initialises |
