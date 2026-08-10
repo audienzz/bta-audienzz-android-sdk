@@ -176,7 +176,7 @@ class BtaFeedView @JvmOverloads constructor(
             // (e.g. teaser images finished loading), so the constraint from before the
             // article opened could be too short and clip the feed.
             webView.evaluateJavascript(
-                "Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0)"
+                HEIGHT_JS
             ) { value ->
                 if (destroyed) return@evaluateJavascript
                 val cssPx = value?.toFloatOrNull() ?: return@evaluateJavascript
@@ -221,7 +221,7 @@ class BtaFeedView @JvmOverloads constructor(
         if (destroyed || reloadHeightFloorPx == 0) return
         reloadHeightFloorPx = 0
         webView.evaluateJavascript(
-            "Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0)"
+            HEIGHT_JS
         ) { value ->
             if (destroyed) return@evaluateJavascript
             val cssPx = value?.toFloatOrNull() ?: return@evaluateJavascript
@@ -409,6 +409,37 @@ class BtaFeedView @JvmOverloads constructor(
         }
     }
 
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        // Width change (e.g. orientation change) reflows the content to a new width, so its
+        // height changes. Re-measure and apply it — no reload() needed by the publisher.
+        if (w > 0 && oldw > 0 && w != oldw && !loading && !destroyed && currentFeedId != null) {
+            remeasureAfterResize(attempt = 0)
+        }
+    }
+
+    /**
+     * Re-measure the feed after a width change settles and apply the true height (which may
+     * grow or shrink). Never reloads and never holds a floor — on rotation we follow the real
+     * new height in both directions. A couple of passes let the WebView finish reflowing.
+     */
+    private fun remeasureAfterResize(attempt: Int) {
+        if (destroyed) return
+        postDelayed({
+            if (destroyed) return@postDelayed
+            webView.evaluateJavascript(
+                HEIGHT_JS
+            ) { value ->
+                if (destroyed) return@evaluateJavascript
+                val cssPx = value?.toFloatOrNull()
+                if (cssPx != null && cssPx > 0f) {
+                    updateWebViewHeight((cssPx * resources.displayMetrics.density).toInt())
+                }
+            }
+            if (attempt + 1 < RESIZE_REMEASURE_PASSES) remeasureAfterResize(attempt + 1)
+        }, RESIZE_REMEASURE_STEP_MS)
+    }
+
     private fun updateWebViewHeight(heightPx: Int) {
         val lp = webView.layoutParams
         if (lp.height != heightPx) {
@@ -546,17 +577,12 @@ class BtaFeedView @JvmOverloads constructor(
                             return;
                         }
 
-                        // Use the largest of documentElement/body scroll & offset heights so a
-                        // late-loading image or an un-collapsed bottom margin can't clip the feed.
+                        // Measure the BODY content height (not documentElement, whose scrollHeight is
+                        // clamped to the viewport/frame and so can't shrink — leaving a huge gap after
+                        // the feed gets shorter, e.g. rotating to landscape).
                         function reportHeight() {
-                            var doc = document.documentElement;
                             var body = document.body;
-                            var h = Math.max(
-                                doc ? doc.scrollHeight : 0,
-                                doc ? doc.offsetHeight : 0,
-                                body ? body.scrollHeight : 0,
-                                body ? body.offsetHeight : 0
-                            );
+                            var h = body ? Math.max(body.scrollHeight, body.offsetHeight) : 0;
                             AndroidBridge.onContentHeightChanged(h);
                         }
 
@@ -600,6 +626,18 @@ class BtaFeedView @JvmOverloads constructor(
 
         /** Max time the loading spinner shows before collapsing if no content arrives. */
         private const val LOADING_TIMEOUT_MS = 10_000L
+
+        /** Re-measure passes and spacing after a width change (orientation), to catch reflow. */
+        private const val RESIZE_REMEASURE_PASSES = 3
+        private const val RESIZE_REMEASURE_STEP_MS = 100L
+
+        /**
+         * JS that measures the BODY content height. Not `documentElement`, whose scrollHeight is
+         * clamped to the viewport/frame height and so can never report shorter than the current
+         * frame — leaving a huge gap after the feed shrinks (e.g. rotating to landscape).
+         */
+        private const val HEIGHT_JS =
+            "document.body ? Math.max(document.body.scrollHeight, document.body.offsetHeight) : 0"
 
         internal const val CDN_BASE_URL = "https://cdn.adnz.co/"
     }
