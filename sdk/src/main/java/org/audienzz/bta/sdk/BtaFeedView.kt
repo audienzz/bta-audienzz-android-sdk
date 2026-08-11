@@ -79,6 +79,7 @@ class BtaFeedView @JvmOverloads constructor(
         val mockRecommendations: Boolean,
         val isDarkMode: Boolean?,
         val isLoadingHolderEnabled: Boolean,
+        val fontStyleUrls: List<String>,
     )
     private var lastLoadParams: LoadParams? = null
 
@@ -157,6 +158,12 @@ class BtaFeedView @JvmOverloads constructor(
      *                              a loading spinner during the initial load. Set `false` to
      *                              suppress it and show your own loading placeholder instead
      *                              (the feed stays at 0 height until content arrives).
+     * @param fontStyleUrls         Font stylesheet URLs (containing `@font-face` rules) injected
+     *                              at the document level so the fonts are usable inside the feed's
+     *                              Shadow DOM. Android's WebView ignores `@font-face` declared inside
+     *                              a shadow root, so this makes custom fonts render. Defaults to the
+     *                              standard AdConsole fonts ([DEFAULT_FONT_STYLE_URLS]); pass your
+     *                              own URLs to override, or an empty list to disable.
      */
     @JvmOverloads
     fun load(
@@ -166,6 +173,7 @@ class BtaFeedView @JvmOverloads constructor(
         mockRecommendations: Boolean = false,
         isDarkMode: Boolean? = null,
         isLoadingHolderEnabled: Boolean = true,
+        fontStyleUrls: List<String> = DEFAULT_FONT_STYLE_URLS,
     ) {
         // If we're returning from BtaWebViewActivity for the same feed, skip the reload.
         // The WebView already has the content; just resume it and clear the flag.
@@ -188,7 +196,7 @@ class BtaFeedView @JvmOverloads constructor(
         }
         suppressNextLoad = false
         performLoad(
-            LoadParams(btaFeedId, pageUrl, debug, mockRecommendations, isDarkMode, isLoadingHolderEnabled),
+            LoadParams(btaFeedId, pageUrl, debug, mockRecommendations, isDarkMode, isLoadingHolderEnabled, fontStyleUrls),
             resetHeight = true,
         )
     }
@@ -303,6 +311,7 @@ class BtaFeedView @JvmOverloads constructor(
             params.debug,
             params.mockRecommendations,
             params.isDarkMode,
+            params.fontStyleUrls,
         )
         webView.loadDataWithBaseURL(CDN_BASE_URL, html, "text/html", "UTF-8", null)
     }
@@ -471,12 +480,20 @@ class BtaFeedView @JvmOverloads constructor(
         }
     }
 
+    /** Escape a string for safe use inside a double-quoted HTML attribute. */
+    private fun htmlAttributeEscaped(value: String): String =
+        value.replace("&", "&amp;")
+            .replace("\"", "&quot;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+
     private fun buildHtml(
         feedId: String,
         pageUrl: String,
         debug: Boolean,
         mockRecommendations: Boolean,
         isDarkMode: Boolean?,
+        fontStyleUrls: List<String>,
     ): String {
         val debugLine = if (debug) "debug: true," else ""
         val mockLine = if (mockRecommendations) "mockRecommendations: true," else ""
@@ -484,6 +501,14 @@ class BtaFeedView @JvmOverloads constructor(
             true  -> "forceDarkTheme: true,"
             false -> ""
             null  -> "isDarkThemeSupported: true,"
+        }
+
+        // Inject the publisher's font stylesheets at the DOCUMENT level so their @font-face
+        // rules are registered globally and usable inside the feed's Shadow DOM. Android's
+        // (older) WebView ignores @font-face declared inside a shadow root, so a document-level
+        // <link> is what makes the custom fonts render.
+        val fontLinks = fontStyleUrls.joinToString("\n                ") { url ->
+            "<link rel=\"stylesheet\" href=\"${htmlAttributeEscaped(url)}\" />"
         }
 
         // Uses plain function() syntax for API 24 WebView compatibility.
@@ -496,6 +521,7 @@ class BtaFeedView @JvmOverloads constructor(
                 <base target="_parent" />
                 <meta charset="UTF-8" />
                 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+                $fontLinks
                 <style>
                     * { margin: 0; padding: 0; box-sizing: border-box; }
                     html, body { overflow: hidden; width: 100%; }
@@ -640,5 +666,16 @@ class BtaFeedView @JvmOverloads constructor(
             "document.body ? Math.max(document.body.scrollHeight, document.body.offsetHeight) : 0"
 
         internal const val CDN_BASE_URL = "https://cdn.adnz.co/"
+
+        /**
+         * Font stylesheets injected at the document level by default so the standard AdConsole
+         * fonts render inside the feed's Shadow DOM (needed on Android). Publishers can override
+         * via [load]'s `fontStyleUrls`, or pass an empty list to disable.
+         */
+        @JvmField
+        val DEFAULT_FONT_STYLE_URLS: List<String> = listOf(
+            "${CDN_BASE_URL}business-click-fonts/Knockout/stylesheet.css",
+            "${CDN_BASE_URL}business-click-fonts/Tiempos/stylesheet.css",
+        )
     }
 }

@@ -53,6 +53,10 @@ import org.audienzz.bta.sdk.model.ArticleClickPayload
  * @param isLoadingHolderEnabled When `true` (default), the SDK shows a loading spinner with
  *                            reserved height during the initial load. Set `false` to show your
  *                            own placeholder instead.
+ * @param fontStyleUrls       Font stylesheet URLs (with `@font-face` rules) injected at the
+ *                            document level so custom fonts render inside the feed's Shadow DOM
+ *                            (needed on Android). Defaults to the standard AdConsole fonts; pass
+ *                            your own to override, or an empty list to disable.
  * @param onArticleClick      Called when the user taps an article. Return `true` to handle
  *                            navigation yourself; return `false` (default) to let the SDK
  *                            open the URL in a fullscreen WebView.
@@ -72,6 +76,7 @@ fun BtaFeed(
     isDarkMode: Boolean? = null,
     reloadToken: Any? = null,
     isLoadingHolderEnabled: Boolean = true,
+    fontStyleUrls: List<String> = BtaFeedView.DEFAULT_FONT_STYLE_URLS,
     onArticleClick: ((ArticleClickPayload) -> Boolean)? = null,
     onAdClick: ((AdClickPayload) -> Boolean)? = null,
     onFeedLoaded: (() -> Unit)? = null,
@@ -88,6 +93,7 @@ fun BtaFeed(
     val currentMockRecs by rememberUpdatedState(mockRecommendations)
     val currentIsDarkMode by rememberUpdatedState(isDarkMode)
     val currentIsLoadingHolderEnabled by rememberUpdatedState(isLoadingHolderEnabled)
+    val currentFontStyleUrls by rememberUpdatedState(fontStyleUrls)
     val currentOnArticleClick by rememberUpdatedState(onArticleClick)
     val currentOnAdClick by rememberUpdatedState(onAdClick)
     val currentOnFeedLoaded by rememberUpdatedState(onFeedLoaded)
@@ -147,6 +153,7 @@ fun BtaFeed(
                         currentMockRecs,
                         currentIsDarkMode,
                         currentIsLoadingHolderEnabled,
+                        currentFontStyleUrls,
                     )
                 }
                 Lifecycle.Event.ON_PAUSE -> view.onPause()

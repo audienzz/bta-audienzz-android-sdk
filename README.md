@@ -252,12 +252,37 @@ the new orientation.
 
 ---
 
+## Custom fonts
+
+The feed renders inside a Shadow DOM, and Android's WebView ignores `@font-face` rules declared
+inside a shadow root — so custom fonts would otherwise fall back to the system font. The SDK
+injects the font stylesheets at the **document level**, where they register globally and apply
+inside the feed. The **standard AdConsole fonts load by default**, so you don't need to change
+anything.
+
+To use different fonts, pass your own `fontStyleUrls`; to disable injection, pass an empty list:
+
+```kotlin
+btaFeedView.load(
+    btaFeedId = "your-bta-feed-id",
+    pageUrl = "https://your-site.com/the-article",
+    fontStyleUrls = listOf(
+        "https://cdn.adnz.co/business-click-fonts/YourFont/stylesheet.css",
+    ),
+    // or fontStyleUrls = emptyList() to disable
+)
+```
+
+In Compose, pass `fontStyleUrls = listOf(...)` (or `emptyList()`) to `BtaFeed`.
+
+---
+
 ## BtaFeedView API reference
 
 | Method | Description |
 |--------|-------------|
 | `setListener(listener)` | Set or replace the event listener |
-| `load(btaFeedId, pageUrl, debug, mockRecommendations, isDarkMode, isLoadingHolderEnabled)` | Load the feed. Call from `onResume()` |
+| `load(btaFeedId, pageUrl, debug, mockRecommendations, isDarkMode, isLoadingHolderEnabled, fontStyleUrls)` | Load the feed. Call from `onResume()` |
 | `reload()` | Refresh content in place without collapsing the height. Replays the last `load()` params |
 | `onResume()` | Resume the WebView. Call from `Activity.onResume()` |
 | `onPause()` | Pause the WebView. Call from `Activity.onPause()` |
@@ -277,6 +302,7 @@ the new orientation.
 | `isDarkMode` | `Boolean?` | `null` | `true` forces dark, `false` forces light, `null` auto-detects from the system |
 | `reloadToken` | `Any?` | `null` | Change to a new value to refresh content in place without collapsing the height |
 | `isLoadingHolderEnabled` | `Boolean` | `true` | Show the SDK's loading spinner (reserved height) on initial load; `false` to use your own placeholder |
+| `fontStyleUrls` | `List<String>` | standard AdConsole fonts | Font stylesheet URLs injected at the document level so custom fonts render inside the feed (needed on Android); pass `emptyList()` to disable |
 | `onArticleClick` | `(ArticleClickPayload) -> Boolean` | `null` | `null` behaves as returning `false` |
 | `onAdClick` | `(AdClickPayload) -> Boolean` | `null` | `null` behaves as returning `false` |
 | `onFeedLoaded` | `() -> Unit` | `null` | Called when the feed initialises |
