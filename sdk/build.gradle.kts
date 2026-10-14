@@ -11,7 +11,7 @@ plugins {
 android {
     namespace = "org.audienzz.bta.sdk"
     compileSdk = 36
-    version = "0.1.11"
+    version = "0.1.12"
 
     defaultConfig {
         minSdk = 24
@@ -37,6 +37,8 @@ android {
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)
+
+    testImplementation(libs.junit)
 }
 
 signing {
