@@ -325,6 +325,21 @@ The SDK automatically tracks the following events and sends them to the Audienzz
 
 Events are batched and sent in [CloudEvents 1.0](https://cloudevents.io) format. A stable visitor ID is persisted across sessions; a new session ID is generated per app launch.
 
+Analytics respects the user's privacy choices — see [Consent & Privacy](#consent--privacy-iab-tcf).
+
+---
+
+## Consent & Privacy (IAB TCF)
+
+The SDK honours the [IAB TCF v2](https://iabeurope.eu/transparency-consent-framework/) consent stored on the device by your Consent Management Platform (CMP, e.g. Usercentrics). No API calls are required — the consent is read automatically on every `load()`.
+
+- **Ad consent** — the stored TC string is exposed to the feed's ad layer through the standard `__tcfapi` interface, so header bidding (Prebid) picks up the user's choices.
+- **Analytics consent** — first-party analytics is suppressed when GDPR applies and the user has not granted consent (TCF Purpose 1 — *store and/or access information on a device*). The visitor ID is only created once consent allows it.
+
+When GDPR does not apply, or no CMP is present, the SDK behaves exactly as before.
+
+Your CMP must write the standard TCF keys (`IABTCF_TCString`, `IABTCF_gdprApplies`, `IABTCF_PurposeConsents`) to the default `SharedPreferences`, which any TCF-certified CMP does automatically. Consent is re-read on each `load()`, so calling `reload()` after the user updates their choices picks up the new state.
+
 ---
 
 ## Debugging

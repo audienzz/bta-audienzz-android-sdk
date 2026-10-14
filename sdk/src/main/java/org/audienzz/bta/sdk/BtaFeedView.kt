@@ -9,6 +9,7 @@ import android.view.ViewTreeObserver
 import android.webkit.ConsoleMessage
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -93,6 +94,9 @@ class BtaFeedView @JvmOverloads constructor(
 
     /** Set in [destroy]; blocks pending delayed callbacks from touching the destroyed WebView. */
     private var destroyed = false
+
+    /** When true (debug loads), every WebView request and every fetch/XHR is logged to logcat. */
+    private var debugLogging = false
 
     /** Prevents duplicate viewable impression events per [load] call. */
     private var viewableImpressionFired = false
@@ -240,6 +244,7 @@ class BtaFeedView @JvmOverloads constructor(
     private fun performLoad(params: LoadParams, resetHeight: Boolean) {
         currentFeedId = params.btaFeedId
         lastLoadParams = params
+        debugLogging = params.debug
         viewableImpressionFired = false
         feedLoadedFired = false
         // On a full load, show the loading state (reserved height + spinner) instead of
@@ -394,6 +399,19 @@ class BtaFeedView @JvmOverloads constructor(
                 return true
             }
 
+            // Logs every resource request the WebView makes (page, scripts, XHR/fetch, ads,
+            // beacons). Returns null so the request proceeds unchanged. Debug loads only.
+            override fun shouldInterceptRequest(
+                view: WebView,
+                request: WebResourceRequest,
+            ): WebResourceResponse? {
+                if (debugLogging) {
+                    val headers = request.requestHeaders.entries.joinToString("; ") { "${it.key}: ${it.value}" }
+                    Log.d(NET_TAG, "REQ ${request.method} ${request.url}${if (headers.isNotEmpty()) "  [$headers]" else ""}")
+                }
+                return null
+            }
+
             @Suppress("DEPRECATION")
             override fun onReceivedError(
                 view: WebView,
@@ -487,6 +505,62 @@ class BtaFeedView @JvmOverloads constructor(
             .replace("<", "&lt;")
             .replace(">", "&gt;")
 
+    /**
+     * Reads the app's IAB TCF consent (as written by a CMP such as Usercentrics into the default
+     * SharedPreferences — `IABTCF_TCString` / `IABTCF_gdprApplies`) and returns a `<script>` that
+     * exposes it to the feed's WebView through the standard `__tcfapi`, so the ad layer (Prebid)
+     * inside the feed picks up the user's consent. Returns "" when no consent string is stored yet
+     * — the feed then behaves exactly as before.
+     */
+    private fun tcfConsentScript(): String {
+        val tcString = BtaConsent.tcString(context) ?: return ""
+        return tcfBridgeScript(tcString, BtaConsent.gdprApplies(context))
+    }
+
+    /**
+     * Builds the `__tcfapi` CMP stub (same-frame function + cross-frame postMessage locator) that
+     * serves the given TC string to anything in the feed document that reads TCF v2.
+     */
+    private fun tcfBridgeScript(tcString: String, gdprApplies: Boolean): String {
+        val tc = tcString.replace("\\", "\\\\").replace("\"", "\\\"")
+        val ga = if (gdprApplies) "true" else "false"
+        return """
+                <script type="text/javascript">
+                    (function() {
+                        var tc = "$tc";
+                        var ga = $ga;
+                        function data(id) { return { tcString: tc, gdprApplies: ga, eventStatus: 'tcloaded', cmpStatus: 'loaded', isServiceSpecific: true, useNonStandardStacks: false, purposeOneTreatment: false, publisherCC: '', listenerId: id }; }
+                        function run(cmd, ver, cb, arg) {
+                            try {
+                                if (cmd === 'ping') { cb({ gdprApplies: ga, cmpLoaded: true, cmpStatus: 'loaded', displayStatus: 'hidden', apiVersion: '2.2', cmpId: 0, cmpVersion: 1, gvlVersion: 0, tcfPolicyVersion: 2 }); }
+                                else if (cmd === 'getTCData') { cb(data(undefined), true); }
+                                else if (cmd === 'addEventListener') { cb(data(0), true); }
+                                else if (cmd === 'removeEventListener') { cb(true, true); }
+                                else { cb(null, false); }
+                            } catch (e) {}
+                        }
+                        if (typeof window.__tcfapi !== 'function') { window.__tcfapi = run; }
+                        window.addEventListener('message', function(e) {
+                            var d = e.data, p;
+                            try { p = (typeof d === 'string') ? JSON.parse(d) : d; } catch (err) { return; }
+                            var c = p && p.__tcfapiCall; if (!c) return;
+                            run(c.command, c.version, function(rv, ok) {
+                                var r = { __tcfapiReturn: { returnValue: rv, success: ok, callId: c.callId } };
+                                e.source.postMessage((typeof d === 'string') ? JSON.stringify(r) : r, '*');
+                            }, c.parameter);
+                        }, false);
+                        function addLocator() {
+                            if (window.frames['__tcfapiLocator']) { return; }
+                            var f = document.createElement('iframe');
+                            f.style.cssText = 'display:none'; f.name = '__tcfapiLocator';
+                            (document.body || document.documentElement).appendChild(f);
+                        }
+                        if (document.body) { addLocator(); } else { document.addEventListener('DOMContentLoaded', addLocator); }
+                    })();
+                </script>
+        """.trimIndent()
+    }
+
     private fun buildHtml(
         feedId: String,
         pageUrl: String,
@@ -511,6 +585,48 @@ class BtaFeedView @JvmOverloads constructor(
             "<link rel=\"stylesheet\" href=\"${htmlAttributeEscaped(url)}\" />"
         }
 
+        // Bridge the app's IAB TCF consent into the feed so Prebid picks it up (empty if none).
+        val consentScript = tcfConsentScript()
+
+        // Debug only: wrap fetch / XMLHttpRequest / sendBeacon so every request and response
+        // (method, URL, and truncated body) is printed to console.log — which the WebChromeClient
+        // forwards to logcat. Runs synchronously in <head> so it wraps them before the feed loads.
+        val netLogScript = if (!debug) "" else """
+                <script type="text/javascript">
+                    (function() {
+                        function log(s) { try { console.log('[NET] ' + s); } catch (e) {} }
+                        var of = window.fetch;
+                        if (of) {
+                            window.fetch = function(input, init) {
+                                var url = (typeof input === 'string') ? input : (input && input.url);
+                                var method = (init && init.method) || (input && input.method) || 'GET';
+                                var body = init && init.body;
+                                log('FETCH REQ ' + method + ' ' + url + (body ? (' body=' + String(body).slice(0, 500)) : ''));
+                                return of.apply(this, arguments).then(function(res) {
+                                    try { res.clone().text().then(function(t) { log('FETCH RES ' + res.status + ' ' + url + ' ' + String(t).slice(0, 1000)); }); } catch (e) {}
+                                    return res;
+                                }).catch(function(err) { log('FETCH ERR ' + url + ' ' + err); throw err; });
+                            };
+                        }
+                        var OX = window.XMLHttpRequest;
+                        if (OX) {
+                            var op = OX.prototype.open, os = OX.prototype.send;
+                            OX.prototype.open = function(m, u) { this.__m = m; this.__u = u; return op.apply(this, arguments); };
+                            OX.prototype.send = function(b) {
+                                var self = this;
+                                log('XHR REQ ' + this.__m + ' ' + this.__u + (b ? (' body=' + String(b).slice(0, 500)) : ''));
+                                this.addEventListener('load', function() { log('XHR RES ' + self.status + ' ' + self.__u + ' ' + String(self.responseText || '').slice(0, 1000)); });
+                                this.addEventListener('error', function() { log('XHR ERR ' + self.__u); });
+                                return os.apply(this, arguments);
+                            };
+                        }
+                        if (navigator.sendBeacon) {
+                            var ob = navigator.sendBeacon.bind(navigator);
+                            navigator.sendBeacon = function(u, d) { log('BEACON ' + u + (d ? (' body=' + String(d).slice(0, 500)) : '')); return ob(u, d); };
+                        }
+                    })();
+                </script>""".trimIndent()
+
         // Uses plain function() syntax for API 24 WebView compatibility.
         // onAdImpression and onArticleImpression handlers are wired and ready —
         // they will fire once the BTA JS team implements those callbacks.
@@ -521,6 +637,8 @@ class BtaFeedView @JvmOverloads constructor(
                 <base target="_parent" />
                 <meta charset="UTF-8" />
                 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+                $consentScript
+                $netLogScript
                 $fontLinks
                 <style>
                     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -642,6 +760,7 @@ class BtaFeedView @JvmOverloads constructor(
 
     companion object {
         private const val TAG = "BtaFeedView"
+        private const val NET_TAG = "BtaFeedNet"
         private const val JS_BRIDGE_NAME = "AndroidBridge"
 
         /** Max time the reload height floor is held before settling to the new height. */

@@ -23,6 +23,12 @@ internal class BtaEventSender {
      */
     fun sendBatch(events: List<BtaEvent>): Boolean {
         if (events.isEmpty()) return true
+        // Temporary kill-switch: the ws-event-ingester endpoint currently returns HTTP 404, so we
+        // suppress the outbound request to avoid hammering a dead endpoint. Collection, batching
+        // and consent gating are unchanged, and the SDK's public API is unaffected. Returning true
+        // (treated as accepted) keeps the "events lost" warning quiet. Flip NETWORK_ENABLED back to
+        // true once the endpoint is live.
+        if (!NETWORK_ENABLED) return true
         val body = buildBatchJson(events)
         return try {
             post(ENDPOINT, body)
@@ -88,6 +94,13 @@ internal class BtaEventSender {
     }
 
     companion object {
+        /**
+         * Temporary kill-switch for analytics ingestion. `false` while the `ws-event-ingester`
+         * endpoint returns HTTP 404; set back to `true` once it is live. Non-const so the compiler
+         * does not flag the guard as a constant condition.
+         */
+        private val NETWORK_ENABLED = false
+
         private const val TAG = "BtaEventSender"
         private const val ENDPOINT =
             "https://api.adnz.co/api/ws-event-ingester/submit/batch"
