@@ -45,6 +45,8 @@ import org.audienzz.bta.sdk.model.ArticleClickPayload
  * @param debug               Enable feed debug logging (**do not use in production**).
  * @param mockRecommendations Show mock recommendations instead of real ones
  *                            (**do not use in production**).
+ * @param mockAds             Show mock/test ad creatives (the violet test banner) instead of
+ *                            running the real ad auction (**do not use in production**).
  * @param isDarkMode          Override the color scheme: `true` forces dark theme, `false` forces
  *                            light theme, `null` (default) auto-detects from the system.
  * @param reloadToken         Change this to any new value to refresh the feed content in place
@@ -81,6 +83,7 @@ fun BtaFeed(
     onAdClick: ((AdClickPayload) -> Boolean)? = null,
     onFeedLoaded: (() -> Unit)? = null,
     onFeedError: ((String) -> Unit)? = null,
+    mockAds: Boolean = false,
 ) {
     val lifecycleOwner = LocalLifecycleOwner.current
 
@@ -91,6 +94,7 @@ fun BtaFeed(
     val currentPageUrl by rememberUpdatedState(pageUrl)
     val currentDebug by rememberUpdatedState(debug)
     val currentMockRecs by rememberUpdatedState(mockRecommendations)
+    val currentMockAds by rememberUpdatedState(mockAds)
     val currentIsDarkMode by rememberUpdatedState(isDarkMode)
     val currentIsLoadingHolderEnabled by rememberUpdatedState(isLoadingHolderEnabled)
     val currentFontStyleUrls by rememberUpdatedState(fontStyleUrls)
@@ -147,13 +151,14 @@ fun BtaFeed(
                     })
                     view.onResume()
                     view.load(
-                        currentBtaFeedId,
-                        currentPageUrl,
-                        currentDebug,
-                        currentMockRecs,
-                        currentIsDarkMode,
-                        currentIsLoadingHolderEnabled,
-                        currentFontStyleUrls,
+                        btaFeedId = currentBtaFeedId,
+                        pageUrl = currentPageUrl,
+                        debug = currentDebug,
+                        mockRecommendations = currentMockRecs,
+                        isDarkMode = currentIsDarkMode,
+                        isLoadingHolderEnabled = currentIsLoadingHolderEnabled,
+                        fontStyleUrls = currentFontStyleUrls,
+                        mockAds = currentMockAds,
                     )
                 }
                 Lifecycle.Event.ON_PAUSE -> view.onPause()

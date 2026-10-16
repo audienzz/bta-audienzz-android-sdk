@@ -11,7 +11,7 @@ plugins {
 android {
     namespace = "org.audienzz.bta.sdk"
     compileSdk = 36
-    version = "0.1.12"
+    version = "0.1.13"
 
     defaultConfig {
         minSdk = 24
@@ -39,6 +39,8 @@ dependencies {
     implementation(libs.androidx.appcompat)
 
     testImplementation(libs.junit)
+    // Real org.json for JVM unit tests (the android.jar stub throws "not mocked").
+    testImplementation("org.json:json:20240303")
 }
 
 signing {

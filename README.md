@@ -352,4 +352,21 @@ if (BuildConfig.DEBUG) {
 }
 ```
 
-Pass `debug = true` and `mockRecommendations = true` to `load()` / `BtaFeed` to show mock content without a live feed configuration.
+Pass the testing flags to `load()` / `BtaFeed` to exercise the feed without a live configuration:
+
+```kotlin
+btaFeedView.load(
+    btaFeedId = "your-bta-feed-id",
+    pageUrl = "https://example.com/article",
+    debug = true,
+    mockRecommendations = true,
+    mockAds = true,
+)
+```
+
+> ⚠️ **These flags are for testing only — set them all to `false` in production.**
+> - `debug = true` enables the widget's **debug logging** (it does *not* change what's displayed).
+> - `mockRecommendations = true` shows **fake recommendations** instead of real ones.
+> - `mockAds = true` shows **mock/test ad creatives** (the violet test banner) instead of running the real ad auction. Use this to verify ad slots in test builds, where real demand won't fill.
+>
+> If you see no advertising in a test build, that's expected unless `mockAds = true` — real ads need production, a modern WebView, consent, and registered inventory.
