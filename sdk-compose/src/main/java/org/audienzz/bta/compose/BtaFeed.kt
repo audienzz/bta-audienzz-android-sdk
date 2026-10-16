@@ -45,6 +45,8 @@ import org.audienzz.bta.sdk.model.ArticleClickPayload
  * @param debug               Enable feed debug logging (**do not use in production**).
  * @param mockRecommendations Show mock recommendations instead of real ones
  *                            (**do not use in production**).
+ * @param mockAds             Show mock/test ad creatives (the violet test banner) instead of
+ *                            running the real ad auction (**do not use in production**).
  * @param isDarkMode          Override the color scheme: `true` forces dark theme, `false` forces
  *                            light theme, `null` (default) auto-detects from the system.
  * @param reloadToken         Change this to any new value to refresh the feed content in place
@@ -73,6 +75,7 @@ fun BtaFeed(
     modifier: Modifier = Modifier,
     debug: Boolean = false,
     mockRecommendations: Boolean = false,
+    mockAds: Boolean = false,
     isDarkMode: Boolean? = null,
     reloadToken: Any? = null,
     isLoadingHolderEnabled: Boolean = true,
@@ -91,6 +94,7 @@ fun BtaFeed(
     val currentPageUrl by rememberUpdatedState(pageUrl)
     val currentDebug by rememberUpdatedState(debug)
     val currentMockRecs by rememberUpdatedState(mockRecommendations)
+    val currentMockAds by rememberUpdatedState(mockAds)
     val currentIsDarkMode by rememberUpdatedState(isDarkMode)
     val currentIsLoadingHolderEnabled by rememberUpdatedState(isLoadingHolderEnabled)
     val currentFontStyleUrls by rememberUpdatedState(fontStyleUrls)
@@ -151,6 +155,7 @@ fun BtaFeed(
                         currentPageUrl,
                         currentDebug,
                         currentMockRecs,
+                        currentMockAds,
                         currentIsDarkMode,
                         currentIsLoadingHolderEnabled,
                         currentFontStyleUrls,

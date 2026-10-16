@@ -78,6 +78,7 @@ class BtaFeedView @JvmOverloads constructor(
         val pageUrl: String,
         val debug: Boolean,
         val mockRecommendations: Boolean,
+        val mockAds: Boolean,
         val isDarkMode: Boolean?,
         val isLoadingHolderEnabled: Boolean,
         val fontStyleUrls: List<String>,
@@ -155,6 +156,10 @@ class BtaFeedView @JvmOverloads constructor(
      * @param debug                 Enable feed debug logging (**do not use in production**).
      * @param mockRecommendations   Show mock recommendations instead of real ones
      *                              (**do not use in production**).
+     * @param mockAds               Show mock/test ad creatives (the violet test banner) instead
+     *                              of running the real ad auction. Useful for verifying ad slots
+     *                              in test builds where real demand won't fill (**do not use in
+     *                              production**).
      * @param isDarkMode            Override the color scheme: `true` forces dark theme,
      *                              `false` forces light theme, `null` (default) auto-detects
      *                              from the system via `prefers-color-scheme`.
@@ -175,6 +180,7 @@ class BtaFeedView @JvmOverloads constructor(
         pageUrl: String,
         debug: Boolean = false,
         mockRecommendations: Boolean = false,
+        mockAds: Boolean = false,
         isDarkMode: Boolean? = null,
         isLoadingHolderEnabled: Boolean = true,
         fontStyleUrls: List<String> = DEFAULT_FONT_STYLE_URLS,
@@ -200,7 +206,7 @@ class BtaFeedView @JvmOverloads constructor(
         }
         suppressNextLoad = false
         performLoad(
-            LoadParams(btaFeedId, pageUrl, debug, mockRecommendations, isDarkMode, isLoadingHolderEnabled, fontStyleUrls),
+            LoadParams(btaFeedId, pageUrl, debug, mockRecommendations, mockAds, isDarkMode, isLoadingHolderEnabled, fontStyleUrls),
             resetHeight = true,
         )
     }
@@ -315,6 +321,7 @@ class BtaFeedView @JvmOverloads constructor(
             params.pageUrl,
             params.debug,
             params.mockRecommendations,
+            params.mockAds,
             params.isDarkMode,
             params.fontStyleUrls,
         )
@@ -566,11 +573,13 @@ class BtaFeedView @JvmOverloads constructor(
         pageUrl: String,
         debug: Boolean,
         mockRecommendations: Boolean,
+        mockAds: Boolean,
         isDarkMode: Boolean?,
         fontStyleUrls: List<String>,
     ): String {
         val debugLine = if (debug) "debug: true," else ""
         val mockLine = if (mockRecommendations) "mockRecommendations: true," else ""
+        val mockAdsLine = if (mockAds) "mockAds: true," else ""
         val darkLine = when (isDarkMode) {
             true  -> "forceDarkTheme: true,"
             false -> ""
@@ -657,6 +666,7 @@ class BtaFeedView @JvmOverloads constructor(
                                 webview: true,
                                 $debugLine
                                 $mockLine
+                                $mockAdsLine
                                 $darkLine
                                 onArticleClick: function(payload) {
                                     payload.event.preventDefault();
