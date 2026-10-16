@@ -130,9 +130,12 @@ internal object BtaConsent {
      * - No GVL version is fabricated; metadata comes from the CMP's own keys.
      */
     internal fun buildTcData(inp: TcfInputs): TcfSnapshot {
-        // The required decoded grants Prebid reads are purpose AND vendor consents; if either is
-        // not yet written the CMP is mid-update, so the snapshot is not ready.
-        val ready = inp.purposeConsents != null && inp.vendorConsents != null
+        // Ready only when the decoded grants Prebid reads (purpose AND vendor) are written, and —
+        // when GDPR applies — a non-empty TC string is present. Prebid rejects an empty TC string
+        // under GDPR, so an empty one must report a not-ready status, never `tcloaded`.
+        val ready = inp.purposeConsents != null &&
+            inp.vendorConsents != null &&
+            (!inp.gdprApplies || inp.tcString.isNotEmpty())
 
         fun bits(s: String?): JSONObject {
             val o = JSONObject()

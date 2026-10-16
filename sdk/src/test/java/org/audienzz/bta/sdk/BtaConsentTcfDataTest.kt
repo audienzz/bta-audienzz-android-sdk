@@ -14,6 +14,8 @@ import org.junit.Test
 class BtaConsentTcfDataTest {
 
     private fun inputs(
+        tcString: String = "CPtest",
+        gdprApplies: Boolean = true,
         purposeConsents: String? = "1111111111",
         purposeLI: String? = "",
         vendorConsents: String? = "",
@@ -30,8 +32,8 @@ class BtaConsentTcfDataTest {
         cmpVersion: Int = 7,
         policyVersion: Int = 4,
     ) = BtaConsent.TcfInputs(
-        tcString = "CPtest",
-        gdprApplies = true,
+        tcString = tcString,
+        gdprApplies = gdprApplies,
         purposeConsents = purposeConsents,
         purposeLegitimateInterests = purposeLI,
         vendorConsents = vendorConsents,
@@ -89,6 +91,20 @@ class BtaConsentTcfDataTest {
         assertEquals("tcloaded", JSONObject(snap.json).getString("eventStatus"))
         // Empty strings → empty grants, not defaulted true.
         assertEquals(0, JSONObject(snap.json).getJSONObject("purpose").getJSONObject("consents").length())
+    }
+
+    @Test
+    fun `empty TC string under GDPR is not ready`() {
+        val snap = BtaConsent.buildTcData(inputs(tcString = "", gdprApplies = true, purposeConsents = "", vendorConsents = ""))
+        assertFalse(snap.ready)
+        assertEquals("cmpuishown", JSONObject(snap.json).getString("eventStatus"))
+    }
+
+    @Test
+    fun `empty TC string without GDPR is ready`() {
+        val snap = BtaConsent.buildTcData(inputs(tcString = "", gdprApplies = false, purposeConsents = "", vendorConsents = ""))
+        assertTrue(snap.ready)
+        assertEquals("tcloaded", JSONObject(snap.json).getString("eventStatus"))
     }
 
     @Test

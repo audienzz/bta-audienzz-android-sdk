@@ -98,6 +98,10 @@ class BtaFeedView @JvmOverloads constructor(
     /** Set in [destroy]; blocks pending delayed callbacks from touching the destroyed WebView. */
     private var destroyed = false
 
+    /** Whether the currently-loaded page was given a resolved (valid, GDPR-complete) consent. Used
+     *  to tell "no CMP on first load" apart from "consent cleared on an existing page". */
+    private var consentWasResolved = false
+
     /** When true (debug loads), every WebView request and every fetch/XHR is logged to logcat. */
     private var debugLogging = false
 
@@ -345,6 +349,9 @@ class BtaFeedView @JvmOverloads constructor(
             params.isDarkMode,
             params.fontStyleUrls,
         )
+        // Record whether this page was given a resolved consent, so a later clearing of consent can
+        // be distinguished from "no CMP on first load" and reset Prebid by reloading.
+        consentWasResolved = BtaConsent.hasCmpData(context) && BtaConsent.updateSnapshot(context).ready
         webView.loadDataWithBaseURL(CDN_BASE_URL, html, "text/html", "UTF-8", null)
     }
 
@@ -631,18 +638,44 @@ class BtaFeedView @JvmOverloads constructor(
         """.trimIndent()
     }
 
-    /** Re-reads consent from storage and pushes it to the live bridge so in-page auctions see the
-     *  change — including withdrawal (cleared TC string → explicit all-denied state) and consent
-     *  that arrives after the page loaded (installs the bridge if it is not present yet). */
+    /** Reacts to a CMP consent change. A resolved consent is pushed to the live bridge (fast, no
+     *  reload). Clearing consent on a page that previously had a resolved grant **reloads** the
+     *  feed — pushing a snapshot alone leaves Prebid's cached grant in place, so the page is reset
+     *  so Prebid re-initialises with no stale consent. */
     private fun pushConsentUpdate() {
-        if (destroyed || !BtaConsent.hasCmpData(context)) return
-        val json = BtaConsent.updateSnapshot(context).json
-        val literal = JSONObject.quote(json)
-        // If the bridge exists, update it; otherwise install it now (consent arrived after load).
-        webView.evaluateJavascript(
-            "if (window.__btaTcfApplyUpdate) { window.__btaTcfApplyUpdate($literal); } else { ${tcfBridgeJs(json)} }",
-            null,
-        )
+        if (destroyed) return
+        if (!BtaConsent.hasCmpData(context)) {
+            // All consent keys removed. Only act if this page had a resolved consent — otherwise
+            // it is simply "no CMP on first load" and must be left alone.
+            if (consentWasResolved) {
+                consentWasResolved = false
+                reload()
+            }
+            return
+        }
+        val snapshot = BtaConsent.updateSnapshot(context)
+        if (snapshot.ready) {
+            // Resolved consent → fast in-page update (install the bridge if it arrived after load).
+            val literal = JSONObject.quote(snapshot.json)
+            webView.evaluateJavascript(
+                "if (window.__btaTcfApplyUpdate) { window.__btaTcfApplyUpdate($literal); } else { ${tcfBridgeJs(snapshot.json)} }",
+                null,
+            )
+            consentWasResolved = true
+        } else if (consentWasResolved) {
+            // GDPR applies but consent is now unresolved/cleared, and Prebid had a cached grant →
+            // reload so it re-initialises in the pending/no-consent state instead of reusing it.
+            consentWasResolved = false
+            reload()
+        } else {
+            // First-load pending (GDPR set, consent not gathered yet): announce the not-ready bridge
+            // so Prebid waits rather than treating it as completed consent.
+            val literal = JSONObject.quote(snapshot.json)
+            webView.evaluateJavascript(
+                "if (window.__btaTcfApplyUpdate) { window.__btaTcfApplyUpdate($literal); } else { ${tcfBridgeJs(snapshot.json)} }",
+                null,
+            )
+        }
     }
 
     private fun buildHtml(
