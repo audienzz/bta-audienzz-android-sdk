@@ -79,11 +79,11 @@ fun BtaFeed(
     reloadToken: Any? = null,
     isLoadingHolderEnabled: Boolean = true,
     fontStyleUrls: List<String> = BtaFeedView.DEFAULT_FONT_STYLE_URLS,
-    mockAds: Boolean = false,
     onArticleClick: ((ArticleClickPayload) -> Boolean)? = null,
     onAdClick: ((AdClickPayload) -> Boolean)? = null,
     onFeedLoaded: (() -> Unit)? = null,
     onFeedError: ((String) -> Unit)? = null,
+    mockAds: Boolean = false,
 ) {
     val lifecycleOwner = LocalLifecycleOwner.current
 

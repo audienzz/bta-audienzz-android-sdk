@@ -29,13 +29,66 @@ internal object BtaConsent {
         null
     }
 
-    /** Whether GDPR applies. `1` = applies, `0` = does not. Absent but a TC string exists → applies. */
+    /** Whether GDPR applies. `1` = applies, `0` = does not. Absent (or an unreadable/wrongly-typed
+     *  value) but a TC string exists → applies, rather than silently treating it as non-applicable. */
     fun gdprApplies(context: Context): Boolean = try {
+        val v = gdprAppliesInt(prefs(context))
+        if (v != null) v == 1 else tcString(context) != null
+    } catch (e: Exception) {
+        tcString(context) != null
+    }
+
+    /** Reads `IABTCF_gdprApplies` robustly: Int (standard), or a mistyped String/Boolean. Returns
+     *  `null` when the key is absent or cannot be interpreted. */
+    private fun gdprAppliesInt(p: SharedPreferences): Int? {
+        if (!p.contains(KEY_GDPR_APPLIES)) return null
+        return try {
+            p.getInt(KEY_GDPR_APPLIES, 0)
+        } catch (e: ClassCastException) {
+            try {
+                val s = p.getString(KEY_GDPR_APPLIES, null)?.trim()
+                when {
+                    s == "1" || s.equals("true", true) -> 1
+                    s == "0" || s.equals("false", true) -> 0
+                    else -> null
+                }
+            } catch (e2: Exception) {
+                try { if (p.getBoolean(KEY_GDPR_APPLIES, false)) 1 else 0 } catch (e3: Exception) { null }
+            }
+        }
+    }
+
+    /** Whether a CMP has written any TCF data, so the bridge should be installed/kept updated. */
+    fun hasCmpData(context: Context): Boolean = try {
         val p = prefs(context)
-        if (p.contains(KEY_GDPR_APPLIES)) p.getInt(KEY_GDPR_APPLIES, 0) == 1
-        else tcString(context) != null
+        (p.getString(KEY_TC_STRING, null)?.isNotEmpty() == true) || p.contains(KEY_GDPR_APPLIES)
     } catch (e: Exception) {
         false
+    }
+
+    /** A snapshot to push on a consent change: the real decoded one, or an explicit cleared
+     *  (all-denied / honouring GDPR-applies) state when the TC string has been removed — so the
+     *  live page never silently retains the previous grant. */
+    fun updateSnapshot(context: Context): TcfSnapshot {
+        tcfSnapshot(context)?.let { return it }
+        val p = try { prefs(context) } catch (e: Exception) { null }
+        fun i(key: String, def: Int): Int =
+            try { if (p?.contains(key) == true) p.getInt(key, def) else def } catch (e: Exception) { def }
+        return buildTcData(
+            TcfInputs(
+                tcString = "",
+                gdprApplies = gdprApplies(context),
+                purposeConsents = "", purposeLegitimateInterests = "",
+                vendorConsents = "", vendorLegitimateInterests = "",
+                specialFeatureOptIns = "", publisherConsent = "", publisherLegitimateInterests = "",
+                publisherCustomConsents = "", publisherCustomLegitimateInterests = "",
+                publisherRestrictions = emptyMap(), publisherCC = "",
+                purposeOneTreatment = false,
+                cmpId = i("IABTCF_CmpSdkID", 0),
+                cmpVersion = i("IABTCF_CmpSdkVersion", 1),
+                tcfPolicyVersion = i("IABTCF_PolicyVersion", 4),
+            ),
+        )
     }
 
     /** Raw decoded IAB TCF v2 values read from storage, fed to [buildTcData]. */
@@ -77,7 +130,9 @@ internal object BtaConsent {
      * - No GVL version is fabricated; metadata comes from the CMP's own keys.
      */
     internal fun buildTcData(inp: TcfInputs): TcfSnapshot {
-        val ready = inp.purposeConsents != null
+        // The required decoded grants Prebid reads are purpose AND vendor consents; if either is
+        // not yet written the CMP is mid-update, so the snapshot is not ready.
+        val ready = inp.purposeConsents != null && inp.vendorConsents != null
 
         fun bits(s: String?): JSONObject {
             val o = JSONObject()
@@ -118,7 +173,6 @@ internal object BtaConsent {
             .put("cmpVersion", inp.cmpVersion)
             .put("tcfPolicyVersion", inp.tcfPolicyVersion)
             .put("isServiceSpecific", true)
-            .put("useNonStandardTexts", false)
             .put("purposeOneTreatment", inp.purposeOneTreatment)
             .put("publisherCC", inp.publisherCC)
             .put(
@@ -191,12 +245,10 @@ internal object BtaConsent {
         } catch (e: Exception) {
             return true
         }
-        // `IABTCF_gdprApplies` is stored as an Int (1/0); null = the key is absent.
-        val gdprApplies: Int? = try {
-            if (p.contains(KEY_GDPR_APPLIES)) p.getInt(KEY_GDPR_APPLIES, 0) else null
-        } catch (e: Exception) {
-            null
-        }
+        // Read the flag robustly; if it is present but unreadable/wrongly-typed, fall back to
+        // "applies" whenever a TC string exists rather than silently allowing analytics.
+        val gdprApplies: Int? = gdprAppliesInt(p)
+            ?: if (p.getString(KEY_TC_STRING, null)?.isNotEmpty() == true) 1 else null
         val purposeConsents: String? = try {
             p.getString(KEY_PURPOSE_CONSENTS, null)
         } catch (e: Exception) {

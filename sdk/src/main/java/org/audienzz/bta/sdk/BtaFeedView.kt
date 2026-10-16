@@ -542,26 +542,30 @@ class BtaFeedView @JvmOverloads constructor(
      * — the feed then behaves exactly as before.
      */
     private fun tcfConsentScript(): String {
-        val snapshot = BtaConsent.tcfSnapshot(context) ?: return ""
-        return tcfBridgeScript(snapshot.json)
+        // Install the bridge whenever a CMP is present. When the TC string has not been written yet
+        // but the CMP is active (gdprApplies set), inject a pending/cleared snapshot so the bridge
+        // exists and a later consent update can reach it (and in-page auctions wait for readiness).
+        if (!BtaConsent.hasCmpData(context)) return ""
+        return "<script type=\"text/javascript\">${tcfBridgeJs(BtaConsent.updateSnapshot(context).json)}</script>"
     }
 
     /**
-     * Builds the `__tcfapi` CMP stub that serves a **full** TCData object (decoded purpose/vendor/
-     * special-feature/publisher consents and restrictions, built in [BtaConsent.buildTcData]) to
-     * anything in the feed that reads TCF v2. Prebid enforcement reads `purpose.consents` /
-     * `vendor.consents`, so these must be present or every bidder is blocked.
+     * The `__tcfapi` CMP-stub JavaScript (without the `<script>` wrapper, so it can also be injected
+     * at runtime via `evaluateJavascript`). Serves a **full** TCData object (decoded purpose/vendor/
+     * special-feature/publisher consents and restrictions, built in [BtaConsent.buildTcData]); Prebid
+     * enforcement reads `purpose.consents` / `vendor.consents`, so these must be present or every
+     * bidder is blocked.
      *
-     * The payload is a single JSON blob; only `<` is escaped (to `<`) so a malformed stored
-     * value cannot break out of the `<script>` (`</script>`) — JSON itself already escapes quotes,
-     * backslashes and newlines. The stub supports real add/removeEventListener with unique ids, and
-     * [pushConsentUpdate] calls `window.__btaTcfApplyUpdate` so withdrawn/updated consent reaches
-     * in-page auctions without a full reload.
+     * The payload is a single JSON blob with `<` escaped to `<` so a malformed stored value
+     * cannot break out of an inline `<script>`. Supports real add/removeEventListener with unique
+     * ids; each listener is dispatched in its own try/catch so one throwing callback cannot starve
+     * the others. `window.__btaTcfApplyUpdate` replaces the live snapshot and re-notifies listeners,
+     * preserving the snapshot's own readiness (a not-ready update stays `cmpuishown`, not
+     * `useractioncomplete`).
      */
-    private fun tcfBridgeScript(tcDataJson: String): String {
+    private fun tcfBridgeJs(tcDataJson: String): String {
         val safe = tcDataJson.replace("<", "\\u003c")
         return """
-                <script type="text/javascript">
                     (function() {
                         var base = $safe;
                         var listeners = {}, nextId = 0;
@@ -587,15 +591,20 @@ class BtaFeedView @JvmOverloads constructor(
                             } catch (e) {}
                         }
                         window.__btaTcfApplyUpdate = function(json) {
-                            try {
-                                base = JSON.parse(json);
-                                for (var id in listeners) {
-                                    if (!listeners.hasOwnProperty(id)) { continue; }
+                            var next;
+                            try { next = JSON.parse(json); } catch (e) { return; }
+                            base = next;
+                            // Preserve readiness through dispatch: only a ready snapshot (tcloaded)
+                            // is reported as a completed user action; otherwise keep its status.
+                            var status = (base.eventStatus === 'tcloaded') ? 'useractioncomplete' : base.eventStatus;
+                            for (var id in listeners) {
+                                if (!listeners.hasOwnProperty(id)) { continue; }
+                                try {
                                     var ev = snap(parseInt(id, 10));
-                                    ev.eventStatus = 'useractioncomplete';
+                                    ev.eventStatus = status;
                                     listeners[id](ev, true);
-                                }
-                            } catch (e) {}
+                                } catch (e) {}
+                            }
                         };
                         if (typeof window.__tcfapi !== 'function') { window.__tcfapi = run; }
                         window.addEventListener('message', function(e) {
@@ -619,18 +628,19 @@ class BtaFeedView @JvmOverloads constructor(
                         addLocator();
                         if (!locatorAdded) { document.addEventListener('DOMContentLoaded', addLocator); }
                     })();
-                </script>
         """.trimIndent()
     }
 
     /** Re-reads consent from storage and pushes it to the live bridge so in-page auctions see the
-     *  change (e.g. the user withdraws consent) without a full reload. No-op before the bridge loads. */
+     *  change — including withdrawal (cleared TC string → explicit all-denied state) and consent
+     *  that arrives after the page loaded (installs the bridge if it is not present yet). */
     private fun pushConsentUpdate() {
-        if (destroyed) return
-        val snapshot = BtaConsent.tcfSnapshot(context) ?: return
-        val literal = JSONObject.quote(snapshot.json)
+        if (destroyed || !BtaConsent.hasCmpData(context)) return
+        val json = BtaConsent.updateSnapshot(context).json
+        val literal = JSONObject.quote(json)
+        // If the bridge exists, update it; otherwise install it now (consent arrived after load).
         webView.evaluateJavascript(
-            "window.__btaTcfApplyUpdate && window.__btaTcfApplyUpdate($literal)",
+            "if (window.__btaTcfApplyUpdate) { window.__btaTcfApplyUpdate($literal); } else { ${tcfBridgeJs(json)} }",
             null,
         )
     }

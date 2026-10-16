@@ -76,11 +76,18 @@ class BtaConsentTcfDataTest {
     }
 
     @Test
-    fun `present purpose consents means ready and tcloaded`() {
-        val snap = BtaConsent.buildTcData(inputs(purposeConsents = ""))
+    fun `purpose present but vendor absent is not ready`() {
+        val snap = BtaConsent.buildTcData(inputs(purposeConsents = "1", vendorConsents = null))
+        assertFalse(snap.ready)
+        assertEquals("cmpuishown", JSONObject(snap.json).getString("eventStatus"))
+    }
+
+    @Test
+    fun `purpose and vendor present means ready and tcloaded`() {
+        val snap = BtaConsent.buildTcData(inputs(purposeConsents = "", vendorConsents = ""))
         assertTrue(snap.ready)
         assertEquals("tcloaded", JSONObject(snap.json).getString("eventStatus"))
-        // Empty string → empty grants, not defaulted true.
+        // Empty strings → empty grants, not defaulted true.
         assertEquals(0, JSONObject(snap.json).getJSONObject("purpose").getJSONObject("consents").length())
     }
 
@@ -118,7 +125,7 @@ class BtaConsentTcfDataTest {
         assertEquals(9, d.getInt("cmpVersion"))
         assertEquals(4, d.getInt("tcfPolicyVersion"))
         assertFalse("gvlVersion must not be fabricated", d.has("gvlVersion"))
-        assertTrue("TCF 2.2 field", d.has("useNonStandardTexts"))
+        assertFalse("useNonStandardTexts not sourced from storage → omitted", d.has("useNonStandardTexts"))
         assertFalse("TCF 2.0 field should be gone", d.has("useNonStandardStacks"))
     }
 }
