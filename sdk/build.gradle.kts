@@ -39,6 +39,8 @@ dependencies {
     implementation(libs.androidx.appcompat)
 
     testImplementation(libs.junit)
+    // Real org.json for JVM unit tests (the android.jar stub throws "not mocked").
+    testImplementation("org.json:json:20240303")
 }
 
 signing {

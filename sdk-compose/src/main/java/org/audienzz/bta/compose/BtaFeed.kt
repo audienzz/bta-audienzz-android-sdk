@@ -75,11 +75,11 @@ fun BtaFeed(
     modifier: Modifier = Modifier,
     debug: Boolean = false,
     mockRecommendations: Boolean = false,
-    mockAds: Boolean = false,
     isDarkMode: Boolean? = null,
     reloadToken: Any? = null,
     isLoadingHolderEnabled: Boolean = true,
     fontStyleUrls: List<String> = BtaFeedView.DEFAULT_FONT_STYLE_URLS,
+    mockAds: Boolean = false,
     onArticleClick: ((ArticleClickPayload) -> Boolean)? = null,
     onAdClick: ((AdClickPayload) -> Boolean)? = null,
     onFeedLoaded: (() -> Unit)? = null,
@@ -151,14 +151,14 @@ fun BtaFeed(
                     })
                     view.onResume()
                     view.load(
-                        currentBtaFeedId,
-                        currentPageUrl,
-                        currentDebug,
-                        currentMockRecs,
-                        currentMockAds,
-                        currentIsDarkMode,
-                        currentIsLoadingHolderEnabled,
-                        currentFontStyleUrls,
+                        btaFeedId = currentBtaFeedId,
+                        pageUrl = currentPageUrl,
+                        debug = currentDebug,
+                        mockRecommendations = currentMockRecs,
+                        isDarkMode = currentIsDarkMode,
+                        isLoadingHolderEnabled = currentIsLoadingHolderEnabled,
+                        fontStyleUrls = currentFontStyleUrls,
+                        mockAds = currentMockAds,
                     )
                 }
                 Lifecycle.Event.ON_PAUSE -> view.onPause()

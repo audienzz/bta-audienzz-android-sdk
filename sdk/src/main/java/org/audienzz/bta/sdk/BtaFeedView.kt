@@ -1,6 +1,8 @@
 package org.audienzz.bta.sdk
 
 import android.content.Context
+import android.content.SharedPreferences
+import org.json.JSONObject
 import android.graphics.Rect
 import android.util.AttributeSet
 import android.util.Log
@@ -78,10 +80,10 @@ class BtaFeedView @JvmOverloads constructor(
         val pageUrl: String,
         val debug: Boolean,
         val mockRecommendations: Boolean,
-        val mockAds: Boolean,
         val isDarkMode: Boolean?,
         val isLoadingHolderEnabled: Boolean,
         val fontStyleUrls: List<String>,
+        val mockAds: Boolean,
     )
     private var lastLoadParams: LoadParams? = null
 
@@ -118,8 +120,26 @@ class BtaFeedView @JvmOverloads constructor(
         if (!viewableImpressionFired) checkViewabilityAndTrack()
     }
 
+    /** Default SharedPreferences a TCF CMP writes `IABTCF_*` consent to. */
+    private val consentPrefs: SharedPreferences? = try {
+        context.getSharedPreferences(context.packageName + "_preferences", Context.MODE_PRIVATE)
+    } catch (e: Exception) {
+        null
+    }
+
+    /** Debounced re-read + push of consent to the live bridge after the CMP writes updates. */
+    private val consentPushRunnable = Runnable { pushConsentUpdate() }
+    private val prefsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        // key is null when storage is cleared (Android R+); treat as a consent change too.
+        if (key == null || key.startsWith("IABTCF_")) {
+            removeCallbacks(consentPushRunnable)
+            postDelayed(consentPushRunnable, CONSENT_PUSH_DEBOUNCE_MS)
+        }
+    }
+
     init {
         BtaEventTracker.init(context)
+        consentPrefs?.registerOnSharedPreferenceChangeListener(prefsListener)
         setupWebView()
         addView(webView, LayoutParams(LayoutParams.MATCH_PARENT, 0))
         // Centered loading spinner, shown over the reserved height during the initial load.
@@ -180,10 +200,10 @@ class BtaFeedView @JvmOverloads constructor(
         pageUrl: String,
         debug: Boolean = false,
         mockRecommendations: Boolean = false,
-        mockAds: Boolean = false,
         isDarkMode: Boolean? = null,
         isLoadingHolderEnabled: Boolean = true,
         fontStyleUrls: List<String> = DEFAULT_FONT_STYLE_URLS,
+        mockAds: Boolean = false,
     ) {
         // If we're returning from BtaWebViewActivity for the same feed, skip the reload.
         // The WebView already has the content; just resume it and clear the flag.
@@ -206,7 +226,7 @@ class BtaFeedView @JvmOverloads constructor(
         }
         suppressNextLoad = false
         performLoad(
-            LoadParams(btaFeedId, pageUrl, debug, mockRecommendations, mockAds, isDarkMode, isLoadingHolderEnabled, fontStyleUrls),
+            LoadParams(btaFeedId, pageUrl, debug, mockRecommendations, isDarkMode, isLoadingHolderEnabled, fontStyleUrls, mockAds),
             resetHeight = true,
         )
     }
@@ -339,6 +359,8 @@ class BtaFeedView @JvmOverloads constructor(
         // Block any pending delayed callbacks (e.g. the reload-floor release) from touching
         // the WebView after it's destroyed — that is undefined behavior and crashes some OEMs.
         destroyed = true
+        removeCallbacks(consentPushRunnable)
+        consentPrefs?.unregisterOnSharedPreferenceChangeListener(prefsListener)
         if (viewTreeObserver.isAlive) {
             viewTreeObserver.removeOnScrollChangedListener(scrollChangedListener)
         }
@@ -520,73 +542,61 @@ class BtaFeedView @JvmOverloads constructor(
      * — the feed then behaves exactly as before.
      */
     private fun tcfConsentScript(): String {
-        val data = BtaConsent.tcfData(context) ?: return ""
-        return tcfBridgeScript(data)
+        val snapshot = BtaConsent.tcfSnapshot(context) ?: return ""
+        return tcfBridgeScript(snapshot.json)
     }
 
     /**
-     * Builds the `__tcfapi` CMP stub (same-frame function + cross-frame postMessage locator) that
-     * serves a **full** TCData object — decoded purpose/vendor/special-feature/publisher consents,
-     * not just the TC string — to anything in the feed document that reads TCF v2. Prebid's TCF
-     * enforcement reads `purpose.consents` / `vendor.consents`, so these must be present or every
-     * bidder is blocked.
+     * Builds the `__tcfapi` CMP stub that serves a **full** TCData object (decoded purpose/vendor/
+     * special-feature/publisher consents and restrictions, built in [BtaConsent.buildTcData]) to
+     * anything in the feed that reads TCF v2. Prebid enforcement reads `purpose.consents` /
+     * `vendor.consents`, so these must be present or every bidder is blocked.
+     *
+     * The payload is a single JSON blob; only `<` is escaped (to `<`) so a malformed stored
+     * value cannot break out of the `<script>` (`</script>`) — JSON itself already escapes quotes,
+     * backslashes and newlines. The stub supports real add/removeEventListener with unique ids, and
+     * [pushConsentUpdate] calls `window.__btaTcfApplyUpdate` so withdrawn/updated consent reaches
+     * in-page auctions without a full reload.
      */
-    private fun tcfBridgeScript(d: BtaConsent.TcfData): String {
-        fun esc(s: String) = s.replace("\\", "\\\\").replace("\"", "\\\"")
-        val tc = esc(d.tcString)
-        val ga = if (d.gdprApplies) "true" else "false"
-        val p1t = if (d.purposeOneTreatment) "true" else "false"
-        val pcc = esc(d.publisherCC)
-        val pc = esc(d.purposeConsents)
-        val pli = esc(d.purposeLegitimateInterests)
-        val vc = esc(d.vendorConsents)
-        val vli = esc(d.vendorLegitimateInterests)
-        val sf = esc(d.specialFeatureOptins)
-        val pubC = esc(d.publisherConsent)
-        val pubLI = esc(d.publisherLegitimateInterests)
-        val cmpId = d.cmpId
-        val policyVer = d.tcfPolicyVersion
+    private fun tcfBridgeScript(tcDataJson: String): String {
+        val safe = tcDataJson.replace("<", "\\u003c")
         return """
                 <script type="text/javascript">
                     (function() {
-                        var tc = "$tc";
-                        var ga = $ga;
-                        function bits(s) { var o = {}; for (var i = 0; i < s.length; i++) { o[i + 1] = s.charAt(i) === '1'; } return o; }
-                        var purposeConsents = bits("$pc");
-                        var purposeLI = bits("$pli");
-                        var vendorConsents = bits("$vc");
-                        var vendorLI = bits("$vli");
-                        var specialFeatureOptins = bits("$sf");
-                        var publisherConsents = bits("$pubC");
-                        var publisherLI = bits("$pubLI");
-                        function data(id) {
-                            return {
-                                tcString: tc, gdprApplies: ga,
-                                eventStatus: 'tcloaded', cmpStatus: 'loaded',
-                                cmpId: $cmpId, cmpVersion: 1, gvlVersion: 0, tcfPolicyVersion: $policyVer,
-                                isServiceSpecific: true, useNonStandardStacks: false,
-                                purposeOneTreatment: $p1t, publisherCC: "$pcc",
-                                purpose: { consents: purposeConsents, legitimateInterests: purposeLI },
-                                vendor: { consents: vendorConsents, legitimateInterests: vendorLI },
-                                specialFeatureOptins: specialFeatureOptins,
-                                publisher: {
-                                    consents: publisherConsents,
-                                    legitimateInterests: publisherLI,
-                                    customPurpose: { consents: {}, legitimateInterests: {} },
-                                    restrictions: {}
-                                },
-                                listenerId: id
-                            };
+                        var base = $safe;
+                        var listeners = {}, nextId = 0;
+                        function snap(listenerId) {
+                            var d = JSON.parse(JSON.stringify(base));
+                            if (listenerId !== undefined) { d.listenerId = listenerId; }
+                            return d;
                         }
                         function run(cmd, ver, cb, arg) {
                             try {
-                                if (cmd === 'ping') { cb({ gdprApplies: ga, cmpLoaded: true, cmpStatus: 'loaded', displayStatus: 'hidden', apiVersion: '2.2', cmpId: $cmpId, cmpVersion: 1, gvlVersion: 0, tcfPolicyVersion: $policyVer }); }
-                                else if (cmd === 'getTCData') { cb(data(undefined), true); }
-                                else if (cmd === 'addEventListener') { cb(data(0), true); }
-                                else if (cmd === 'removeEventListener') { cb(true, true); }
+                                if (cmd === 'ping') {
+                                    cb({ gdprApplies: base.gdprApplies, cmpLoaded: true, cmpStatus: base.cmpStatus, displayStatus: 'hidden', apiVersion: '2.2', cmpId: base.cmpId, cmpVersion: base.cmpVersion, tcfPolicyVersion: base.tcfPolicyVersion });
+                                    return;
+                                }
+                                if (ver !== undefined && ver !== null && ver !== 2) { cb(null, false); return; }
+                                if (cmd === 'getTCData') { cb(snap(undefined), true); }
+                                else if (cmd === 'addEventListener') { var id = nextId++; listeners[id] = cb; cb(snap(id), true); }
+                                else if (cmd === 'removeEventListener') {
+                                    if (typeof arg === 'number' && listeners.hasOwnProperty(arg)) { delete listeners[arg]; cb(true, true); }
+                                    else { cb(false, false); }
+                                }
                                 else { cb(null, false); }
                             } catch (e) {}
                         }
+                        window.__btaTcfApplyUpdate = function(json) {
+                            try {
+                                base = JSON.parse(json);
+                                for (var id in listeners) {
+                                    if (!listeners.hasOwnProperty(id)) { continue; }
+                                    var ev = snap(parseInt(id, 10));
+                                    ev.eventStatus = 'useractioncomplete';
+                                    listeners[id](ev, true);
+                                }
+                            } catch (e) {}
+                        };
                         if (typeof window.__tcfapi !== 'function') { window.__tcfapi = run; }
                         window.addEventListener('message', function(e) {
                             var d = e.data, p;
@@ -597,16 +607,32 @@ class BtaFeedView @JvmOverloads constructor(
                                 e.source.postMessage((typeof d === 'string') ? JSON.stringify(r) : r, '*');
                             }, c.parameter);
                         }, false);
+                        var locatorAdded = false;
                         function addLocator() {
-                            if (window.frames['__tcfapiLocator']) { return; }
+                            if (locatorAdded || window.frames['__tcfapiLocator']) { return; }
+                            var parent = document.body || document.documentElement;
+                            if (!parent) { return; }
                             var f = document.createElement('iframe');
                             f.style.cssText = 'display:none'; f.name = '__tcfapiLocator';
-                            (document.body || document.documentElement).appendChild(f);
+                            parent.appendChild(f); locatorAdded = true;
                         }
-                        if (document.body) { addLocator(); } else { document.addEventListener('DOMContentLoaded', addLocator); }
+                        addLocator();
+                        if (!locatorAdded) { document.addEventListener('DOMContentLoaded', addLocator); }
                     })();
                 </script>
         """.trimIndent()
+    }
+
+    /** Re-reads consent from storage and pushes it to the live bridge so in-page auctions see the
+     *  change (e.g. the user withdraws consent) without a full reload. No-op before the bridge loads. */
+    private fun pushConsentUpdate() {
+        if (destroyed) return
+        val snapshot = BtaConsent.tcfSnapshot(context) ?: return
+        val literal = JSONObject.quote(snapshot.json)
+        webView.evaluateJavascript(
+            "window.__btaTcfApplyUpdate && window.__btaTcfApplyUpdate($literal)",
+            null,
+        )
     }
 
     private fun buildHtml(
@@ -816,6 +842,7 @@ class BtaFeedView @JvmOverloads constructor(
 
         /** Max time the reload height floor is held before settling to the new height. */
         private const val RELOAD_FLOOR_TIMEOUT_MS = 1500L
+        private const val CONSENT_PUSH_DEBOUNCE_MS = 250L
 
         /** Reserved height (dp) shown with a spinner during the initial load. */
         private const val LOADING_HEIGHT_DP = 120f
