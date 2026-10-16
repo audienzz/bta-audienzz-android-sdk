@@ -102,6 +102,12 @@ class BtaFeedView @JvmOverloads constructor(
      *  to tell "no CMP on first load" apart from "consent cleared on an existing page". */
     private var consentWasResolved = false
 
+    /** Whether the `__tcfapi` bridge was injected into the current page at load time. The feed's
+     *  Prebid configures consent management only at init and only if the bridge already exists, so
+     *  consent arriving on a page that loaded without the bridge needs a reload, not a runtime
+     *  injection. */
+    private var bridgeInjectedAtLoad = false
+
     /** When true (debug loads), every WebView request and every fetch/XHR is logged to logcat. */
     private var debugLogging = false
 
@@ -349,9 +355,10 @@ class BtaFeedView @JvmOverloads constructor(
             params.isDarkMode,
             params.fontStyleUrls,
         )
-        // Record whether this page was given a resolved consent, so a later clearing of consent can
-        // be distinguished from "no CMP on first load" and reset Prebid by reloading.
-        consentWasResolved = BtaConsent.hasCmpData(context) && BtaConsent.updateSnapshot(context).ready
+        // Record consent state at load: whether the bridge was injected (so Prebid configured
+        // consent management), and whether a resolved consent was present.
+        bridgeInjectedAtLoad = BtaConsent.hasCmpData(context)
+        consentWasResolved = bridgeInjectedAtLoad && BtaConsent.updateSnapshot(context).ready
         webView.loadDataWithBaseURL(CDN_BASE_URL, html, "text/html", "UTF-8", null)
     }
 
@@ -651,6 +658,13 @@ class BtaFeedView @JvmOverloads constructor(
                 consentWasResolved = false
                 reload()
             }
+            return
+        }
+        if (!bridgeInjectedAtLoad) {
+            // CMP data arrived on a page that loaded without the bridge. The feed's Prebid only
+            // configures consent management at init (when __tcfapi already exists), so injecting the
+            // bridge now would not connect it — reload with the bridge present before feed init.
+            reload()
             return
         }
         val snapshot = BtaConsent.updateSnapshot(context)
