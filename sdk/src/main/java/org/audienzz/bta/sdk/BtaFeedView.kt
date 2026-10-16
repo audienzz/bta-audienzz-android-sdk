@@ -520,26 +520,67 @@ class BtaFeedView @JvmOverloads constructor(
      * — the feed then behaves exactly as before.
      */
     private fun tcfConsentScript(): String {
-        val tcString = BtaConsent.tcString(context) ?: return ""
-        return tcfBridgeScript(tcString, BtaConsent.gdprApplies(context))
+        val data = BtaConsent.tcfData(context) ?: return ""
+        return tcfBridgeScript(data)
     }
 
     /**
      * Builds the `__tcfapi` CMP stub (same-frame function + cross-frame postMessage locator) that
-     * serves the given TC string to anything in the feed document that reads TCF v2.
+     * serves a **full** TCData object — decoded purpose/vendor/special-feature/publisher consents,
+     * not just the TC string — to anything in the feed document that reads TCF v2. Prebid's TCF
+     * enforcement reads `purpose.consents` / `vendor.consents`, so these must be present or every
+     * bidder is blocked.
      */
-    private fun tcfBridgeScript(tcString: String, gdprApplies: Boolean): String {
-        val tc = tcString.replace("\\", "\\\\").replace("\"", "\\\"")
-        val ga = if (gdprApplies) "true" else "false"
+    private fun tcfBridgeScript(d: BtaConsent.TcfData): String {
+        fun esc(s: String) = s.replace("\\", "\\\\").replace("\"", "\\\"")
+        val tc = esc(d.tcString)
+        val ga = if (d.gdprApplies) "true" else "false"
+        val p1t = if (d.purposeOneTreatment) "true" else "false"
+        val pcc = esc(d.publisherCC)
+        val pc = esc(d.purposeConsents)
+        val pli = esc(d.purposeLegitimateInterests)
+        val vc = esc(d.vendorConsents)
+        val vli = esc(d.vendorLegitimateInterests)
+        val sf = esc(d.specialFeatureOptins)
+        val pubC = esc(d.publisherConsent)
+        val pubLI = esc(d.publisherLegitimateInterests)
+        val cmpId = d.cmpId
+        val policyVer = d.tcfPolicyVersion
         return """
                 <script type="text/javascript">
                     (function() {
                         var tc = "$tc";
                         var ga = $ga;
-                        function data(id) { return { tcString: tc, gdprApplies: ga, eventStatus: 'tcloaded', cmpStatus: 'loaded', isServiceSpecific: true, useNonStandardStacks: false, purposeOneTreatment: false, publisherCC: '', listenerId: id }; }
+                        function bits(s) { var o = {}; for (var i = 0; i < s.length; i++) { o[i + 1] = s.charAt(i) === '1'; } return o; }
+                        var purposeConsents = bits("$pc");
+                        var purposeLI = bits("$pli");
+                        var vendorConsents = bits("$vc");
+                        var vendorLI = bits("$vli");
+                        var specialFeatureOptins = bits("$sf");
+                        var publisherConsents = bits("$pubC");
+                        var publisherLI = bits("$pubLI");
+                        function data(id) {
+                            return {
+                                tcString: tc, gdprApplies: ga,
+                                eventStatus: 'tcloaded', cmpStatus: 'loaded',
+                                cmpId: $cmpId, cmpVersion: 1, gvlVersion: 0, tcfPolicyVersion: $policyVer,
+                                isServiceSpecific: true, useNonStandardStacks: false,
+                                purposeOneTreatment: $p1t, publisherCC: "$pcc",
+                                purpose: { consents: purposeConsents, legitimateInterests: purposeLI },
+                                vendor: { consents: vendorConsents, legitimateInterests: vendorLI },
+                                specialFeatureOptins: specialFeatureOptins,
+                                publisher: {
+                                    consents: publisherConsents,
+                                    legitimateInterests: publisherLI,
+                                    customPurpose: { consents: {}, legitimateInterests: {} },
+                                    restrictions: {}
+                                },
+                                listenerId: id
+                            };
+                        }
                         function run(cmd, ver, cb, arg) {
                             try {
-                                if (cmd === 'ping') { cb({ gdprApplies: ga, cmpLoaded: true, cmpStatus: 'loaded', displayStatus: 'hidden', apiVersion: '2.2', cmpId: 0, cmpVersion: 1, gvlVersion: 0, tcfPolicyVersion: 2 }); }
+                                if (cmd === 'ping') { cb({ gdprApplies: ga, cmpLoaded: true, cmpStatus: 'loaded', displayStatus: 'hidden', apiVersion: '2.2', cmpId: $cmpId, cmpVersion: 1, gvlVersion: 0, tcfPolicyVersion: $policyVer }); }
                                 else if (cmd === 'getTCData') { cb(data(undefined), true); }
                                 else if (cmd === 'addEventListener') { cb(data(0), true); }
                                 else if (cmd === 'removeEventListener') { cb(true, true); }

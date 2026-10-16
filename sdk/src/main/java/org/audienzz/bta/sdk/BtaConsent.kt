@@ -38,6 +38,52 @@ internal object BtaConsent {
     }
 
     /**
+     * The decoded IAB TCF v2 consent the CMP wrote to storage, as needed to synthesise a full
+     * `TCData` object for the `__tcfapi` bridge. The binary `*Consents`/`*LegitimateInterests`
+     * fields are the standard "1"/"0"-per-index strings (purpose/vendor/special-feature id → bit).
+     * Returns `null` when no TC string is present.
+     */
+    internal data class TcfData(
+        val tcString: String,
+        val gdprApplies: Boolean,
+        val purposeConsents: String,
+        val purposeLegitimateInterests: String,
+        val vendorConsents: String,
+        val vendorLegitimateInterests: String,
+        val specialFeatureOptins: String,
+        val publisherConsent: String,
+        val publisherLegitimateInterests: String,
+        val publisherCC: String,
+        val purposeOneTreatment: Boolean,
+        val cmpId: Int,
+        val tcfPolicyVersion: Int,
+    )
+
+    /** Reads the full decoded TCF consent from storage, or `null` when no TC string is stored. */
+    fun tcfData(context: Context): TcfData? {
+        val tc = tcString(context) ?: return null
+        val p = try { prefs(context) } catch (e: Exception) { return null }
+        fun str(key: String): String = try { p.getString(key, null) } catch (e: Exception) { null } ?: ""
+        fun int(key: String, default: Int): Int =
+            try { if (p.contains(key)) p.getInt(key, default) else default } catch (e: Exception) { default }
+        return TcfData(
+            tcString = tc,
+            gdprApplies = gdprApplies(context),
+            purposeConsents = str(KEY_PURPOSE_CONSENTS),
+            purposeLegitimateInterests = str("IABTCF_PurposeLegitimateInterests"),
+            vendorConsents = str("IABTCF_VendorConsents"),
+            vendorLegitimateInterests = str("IABTCF_VendorLegitimateInterests"),
+            specialFeatureOptins = str("IABTCF_SpecialFeaturesOptins"),
+            publisherConsent = str("IABTCF_PublisherConsent"),
+            publisherLegitimateInterests = str("IABTCF_PublisherLegitimateInterests"),
+            publisherCC = str("IABTCF_PublisherCC"),
+            purposeOneTreatment = int("IABTCF_PurposeOneTreatment", 0) == 1,
+            cmpId = int("IABTCF_CmpSdkID", 0),
+            tcfPolicyVersion = int("IABTCF_PolicyVersion", 2),
+        )
+    }
+
+    /**
      * Whether analytics collection/sending is permitted under the current consent.
      *
      * The SDK stores a visitor ID and sends measurement events, which fall under TCF Purpose 1
