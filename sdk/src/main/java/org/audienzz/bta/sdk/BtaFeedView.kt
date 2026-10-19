@@ -359,7 +359,13 @@ class BtaFeedView @JvmOverloads constructor(
         // consent management), and whether a resolved consent was present.
         bridgeInjectedAtLoad = BtaConsent.hasCmpData(context)
         consentWasResolved = bridgeInjectedAtLoad && BtaConsent.updateSnapshot(context).ready
-        webView.loadDataWithBaseURL(CDN_BASE_URL, html, "text/html", "UTF-8", null)
+        // Use the hosting page URL as the WebView base so window.location (and bidder rd_ref, e.g.
+        // AppNexus) reflect the article's origin rather than the CDN — otherwise bidders reject
+        // cdn.adnz.co as the page and return no fill. Falls back to the CDN when no valid pageUrl.
+        val baseUrl = params.pageUrl.takeIf {
+            it.startsWith("http://") || it.startsWith("https://")
+        } ?: CDN_BASE_URL
+        webView.loadDataWithBaseURL(baseUrl, html, "text/html", "UTF-8", null)
     }
 
     /** Call from `Activity.onResume()` or `Fragment.onResume()`. */
